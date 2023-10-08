@@ -5,7 +5,7 @@ use std::sync::RwLock;
 use std::fs::{self, DirBuilder, ReadDir, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::error::Error;
-
+use std::io::{self, Seek, SeekFrom, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
 
 /// A top level abstraction for the database. Handles all of the reads and writes to the data base.
 pub struct DbState {
@@ -30,22 +30,22 @@ impl DbState {
             file_path,
         }
     }
+
     /// Associated method for loading data already saved into a new `DbState`.
     pub fn load(db_dir: String, db_file_name: String, epic_dir: String) -> DbResult<DbState> {
         // Create file path
-        let mut path = PathBuf::from(db_dir.as_str());
-        path.push(db_file_name.as_str());
+        let mut root_path = PathBuf::from(db_dir.as_str());
+        root_path.push(db_file_name.as_str());
 
         // Load file
-        let mut file = if let Ok(f) = OpenOptions::new().read(true).write(true).open(path) {
+        let mut file = if let Ok(f) = OpenOptions::new().read(true).open(root_path) {
             BufReader::new(f)
         } else {
-            return Err(DbError::FileLoadError(format!("{}, {}", db_dir, db_file_name)));
+            return Err(DbError::FileLoadError(format!("unable to load file from {}, {}", db_dir, db_file_name)));
         };
 
         let mut epics = HashMap::new();
         let mut lines = file.lines();
-
 
         while let Some(line) = lines.next() {
             let line = line.map_err(|e| DbError::FileReadError(db_file_name))?;
@@ -64,11 +64,27 @@ impl DbState {
     }
 
     fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
-        todo!()
+        let (id_str, path_str) = match line.find(',') {
+            Some(idx) => (&line[..idx], &line[idx+1..]),
+            None => return Err(DbError::FileReadError(format!("unable to parse data base line: {}", line))),
+        };
+
+        let id = id_str.parse::<u32>()
+            .map_err(|_e| DbError::FileReadError(format!("unable to parse epic id: {}", id_str)))?;
+        let path = PathBuf::from(path_str);
+        Ok((id, path))
     }
 
-    fn parse_epic(path: PathBuf) -> Epic {
-        todo!()
+    fn parse_epic(path: PathBuf) -> Result<Epic, DbError> {
+        // Attempt to open the file
+        let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path) {
+            BufReader::new(f)
+        } else {
+            return Err(DbError::FileLoadError(format!("unable to load file {:?}", path.to_str())))
+        };
+
+        let mut cur
+
     }
 }
 
@@ -100,6 +116,62 @@ impl Epic {
             stories: HashMap::new(),
         }
     }
+
+    fn load(path: PathBuf) -> Result<Epic, DbError> {
+        // Attempt to open the file
+        let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path) {
+            BufReader::new(f)
+        } else {
+            return Err(DbError::FileLoadError(format!("unable to load file {:?}", path.to_str())))
+        };
+
+        // Read the bytes for the epic tag
+        let mut epic_tag = [0_u8; 17];
+        file.read_exact(&epic_tag)
+            .map_err(|_e| DbError::FileReadError(format!("unable to read file {:?}", path.to_str())))?;
+
+        // Extract data from epic tag
+        let (id, name_len, description_len, file_path_len, status_byte) = <Epic as BytesEncode>::decode(epic_tag);
+
+        let mut epic_name_bytes = vec![0_u8; name_len as usize];
+        let mut epic_description_bytes = vec![0_u8; description_len as usize];
+        let mut epic_file_path_bytes = vec![0_u8; file_path_len as usize];
+
+        // Read the bytes from the file
+        file.read_exact(epic_name_bytes.as_mut_slice())
+            .map_err(|_e| DbError::FileReadError(format!("unable to read epic: {id} name from file {:?}", path.as_str())))?;
+        file.read_exact(epic_description_bytes.as_mut_slice())
+            .map_err(|_e| DbError::FileReadError(format!("unable to read epic: {id} description from file {:?}", path.as_str())))?;
+        file.read_exact(epic_file_path_bytes.as_mut_slice())
+            .map_err(|_e| DbError::FileReadError(format!("unable to read epic: {id} file path from file {:?}", path.as_str())))?;
+
+        // Create epic name, description and path as strings
+        let epic_name = String::from_utf8(epic_name_bytes)
+            .map_err(|_e| DbError::ParseError(format!("unable to parse epic: {id} name")))?;
+        let epic_description = String::from_utf8(epic_description_bytes)
+            .map_err(|_e| DbError::ParseError(format!("unable to parse epic: {id} name")))?;
+        let epic_file_path = String::from_utf8(epic_file_path_bytes)
+            .map_err(|_e| DbError::ParseError(format!("unable to parse epic: {id} name")))?;
+
+        // Create stories hashmap and tag for the current story if any
+        let mut stories = HashMap::new();
+        let mut cur_story_tag = [0_u8; 13];
+
+        loop {
+            // Match for any errors when reading the tag from the file
+            // eof error needs to trigger break from the loop, all other others need to be propagated
+            if let Err(e) = file.read_exact(&mut cur_story_tag) {
+                match e {
+                    ErrorKind::UnexpectedEof => break,
+                    _ => return Err(DbError::FileReadError(format!("unable to read stories from {:?}", path.as_str()))),
+                }
+            }
+            //TODO: parse story tag and create a new story for the current epic, then add to hashmap
+            todo!()
+        }
+
+        todo!()
+    }
 }
 
 unsafe impl Send for Epic {}
@@ -107,6 +179,7 @@ unsafe impl Sync for Epic {}
 
 impl BytesEncode for Epic {
     type Tag = EpicTag;
+    type DecodeTag = (u32, u32, u32, u32, u8);
     fn encode(&self) -> Self::Tag {
         let mut encoded_bytes = [0_u8; 17];
 
@@ -136,11 +209,47 @@ impl BytesEncode for Epic {
 
         encoded_bytes
     }
+
+    fn decode(tag: Self::Tag) -> Self::DecodedTag {
+        // decode id
+        let mut id = 0_u32;
+        for i in 0..4 {
+            id ^= (tag[i] as u32) << (i * 8);
+        }
+
+        // decode length of name
+        let mut name_len = 0_u32;
+        for i in 4..8 {
+            name_len ^= (tag[i] as u32) << ((i % 4) * 8);
+        }
+
+        // decode length of description
+        let mut description_len = 0_u32;
+        for i in 8..12 {
+            description_len ^= (tag[i] as u32) << ((i % 4) * 8);
+        }
+
+        // decode length of path
+        let mut path_len = 0_u32;
+        for i in 12..16 {
+            path_len ^= (tag[i] as u32) << ((i % 4) * 8);
+        }
+
+        // decode status byte
+        let status_byte = tag[16];
+
+        (id, name_len, description_len, path_len, status_byte)
+    }
 }
 
 type EpicTag = [u8; 17];
 
 impl TagEncoding for EpicTag {}
+
+type EpicDecodeTag = (u32, u32, u32, u32, u8);
+
+impl TagDecoding for EpicDecodeTag {}
+
 
 /// A struct that encapsulates all pertinent information and behaviors for a single story.
 #[derive(Debug)]
@@ -167,6 +276,8 @@ unsafe impl Sync for Story {}
 
 impl BytesEncode for Story {
     type Tag = StoryTag;
+    
+    type DecodedTag = StoryDecodeTag;
 
     fn encode(&self) -> Self::Tag {
         let mut encoded_bytes = [0_u8; 13];
@@ -194,11 +305,19 @@ impl BytesEncode for Story {
 
         encoded_bytes as StoryTag
     }
+
+    fn decode(tag: Self::Tag) -> Self::DecodedTag {
+        todo!()
+    }
 }
 
 type StoryTag = [u8; 13];
 
 impl TagEncoding for StoryTag {}
+
+type StoryDecodeTag = (u32, u32, u32, u8);
+
+impl TagDecoding for StoryDecodeTag {}
 
 /// Represents the status of either a `Epic` or a `Story` struct
 pub enum Status {
@@ -212,6 +331,7 @@ pub enum Status {
 pub enum DbError {
     FileLoadError(String),
     FileReadError(String),
+    ParseError(String),
 }
 
 
@@ -219,12 +339,18 @@ pub enum DbError {
 /// Marker trait for types that represent tag encodings
 pub trait TagEncoding {}
 
+/// Marker trait for types that represent tag decodings
+pub trait TagDecoding {}
+
 /// Provides an interface to types that can be serialized and deserialized as a stream of bytes
 pub trait BytesEncode {
     /// The type of tag encoding for the implementing type
     type Tag: TagEncoding;
-
+    /// The type that `Self::Tag` gets decoded into
+    type DecodedTag: TagDecoding;
     /// Required: encodes the type into a `Self::Tag`
     fn encode(&self) -> Self::Tag;
+    /// Required: decodes `Self::Tag` into a `Self::DecodedTag`
+    fn decode(tag: Self::Tag) -> Self::DecodedTag;
 }
 
