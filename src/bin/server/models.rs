@@ -6,15 +6,15 @@ use std::fs::{self, DirBuilder, ReadDir, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::io::{self, Seek, SeekFrom, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
-use std::convert::TryFrom;
+use std::convert::{TryFrom, Into};
 
 /// A top level abstraction for the database. Handles all of the reads and writes to the data base.
 pub struct DbState {
     /// Holds the mapping from epic id's to `Epic`s
     epics: HashMap<u32, Epic>,
-    epic_dir: String,
     db_dir: String,
     db_file_name: String,
+    epic_dir: String,
     file_path: PathBuf,
 }
 
@@ -25,9 +25,9 @@ impl DbState {
         file_path.push(db_file_name.as_str());
         DbState {
             epics: HashMap::new(),
-            epic_dir,
             db_dir,
             db_file_name,
+            epic_dir,
             file_path,
         }
     }
@@ -51,7 +51,7 @@ impl DbState {
         while let Some(line) = lines.next() {
             let line = line.map_err(|e| DbError::FileReadError(db_file_name))?;
             let (epic_id, epic_file_path) = DbState::parse_db_line(line)?;
-            let epic = DbState::parse_epic(epic_file_path)?;
+            let epic = Epic::load(epic_file_path)?;
             epics.insert(epic_id, epic);
         }
 
@@ -75,18 +75,6 @@ impl DbState {
         let path = PathBuf::from(path_str);
         Ok((id, path))
     }
-
-    fn parse_epic(path: PathBuf) -> Result<Epic, DbError> {
-        // Attempt to open the file
-        let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path) {
-            BufReader::new(f)
-        } else {
-            return Err(DbError::FileLoadError(format!("unable to load file {:?}", path.to_str())))
-        };
-
-        // let mut cur
-
-    }
 }
 
 /// A struct that encapsulates all pertinent information and behaviors for a single epic.
@@ -107,6 +95,7 @@ pub struct Epic {
 }
 
 impl Epic {
+    /// Associated method for creating a new `Epic` from `id`, `name`, `description`, `status`, `file_path` and `stories`.
     pub fn new(id: u32, name: String, description: String, status: Status, file_path: PathBuf, stories: HashMap<u32, Story>) -> Epic {
         Epic {
             id,
@@ -117,8 +106,9 @@ impl Epic {
             stories,
         }
     }
-
-    fn load(path: PathBuf) -> Result<Epic, DbError> {
+    /// Associated method for loading a `Epic` from `path`. The method is fallible, and so a `Result<Epic, DbError>` is returned,
+    /// where the `Err` variant is the unsuccessful `load`.
+    pub fn load(path: PathBuf) -> Result<Epic, DbError> {
         // Attempt to open the file
         let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path) {
             BufReader::new(f)
@@ -241,12 +231,7 @@ impl BytesEncode for Epic {
         // }
 
         // Read status byte
-        encoded_bytes[16] = match self.status {
-            Status::Open => 0,
-            Status::InProgress => 1,
-            Status::Resolved => 2,
-            Status::Closed => 3,
-        };
+        encoded_bytes[12] = self.status.into();
 
         encoded_bytes
     }
@@ -335,12 +320,7 @@ impl BytesEncode for Story {
             encoded_bytes[i] = (((self.description.len() as u32) >> (i % 4) * 8) & 0xff) as u8;
         }
 
-        let status_byte: u8 = match self.status {
-            Status::Open => 0,
-            Status::InProgress => 1,
-            Status::Closed => 3,
-            Status::Resolved => 4
-        };
+        let status_byte: u8 = self.status.into();
 
         encoded_bytes[12] = status_byte;
 
@@ -395,6 +375,17 @@ impl TryFrom<u8> for Status {
             2 => Ok(Status::Resolved),
             3 => Ok(Status::Closed),
             _ => Err(DbError::ParseError(format!("unable to parse `Status` from byte {value}")))
+        }
+    }
+}
+
+impl Into<u8> for Status {
+    fn into(self) -> u8 {
+        match self {
+            Status::Open => 0,
+            Status::InProgress => 1,
+            Status::Resolved => 2,
+            Status::Closed => 3,
         }
     }
 }
