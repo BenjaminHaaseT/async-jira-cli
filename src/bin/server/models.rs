@@ -417,3 +417,32 @@ pub trait BytesEncode {
     fn decode(tag: Self::Tag) -> Self::DecodedTag;
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn create_story_should_work() {
+        let story = Story::new(1, String::from("Test Story 1"), String::from("A simple test story"), Status::Open);
+        println!("{:?}", story);
+        assert!(true)
+    }
+    #[test]
+    fn story_encode_decode_should_work() {
+        let story = Story::new(1, String::from("Test Story 1"), String::from("A simple test story"), Status::Open);
+        // Attempt to encode
+        let story_tag = story.encode();
+
+        println!("{:?}", story_tag);
+
+        assert_eq!(story_tag, [1, 12, 0, 0, 0, 19, 0, 0, 0, 0]);
+
+        // Attempt to decode
+        let (story_id, story_name_len, story_description_len, story_status_byte) = <Story as BytesEncode>::decode(story_tag);
+
+        assert_eq!(1, story_id);
+        assert_eq!(12, story_name_len);
+        assert_eq!(19, story_description_len);
+        assert_eq!(0, story_status_byte);
+    }
+}
