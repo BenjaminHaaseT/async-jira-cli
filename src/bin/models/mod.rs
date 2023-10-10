@@ -6,7 +6,7 @@ use std::fs::{self, DirBuilder, ReadDir, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::io::{self, Seek, SeekFrom, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
-use std::convert::{TryFrom, Into};
+use std::convert::{TryFrom, Into, AsRef};
 
 /// A top level abstraction for the database. Handles all of the reads and writes to the data base.
 pub struct DbState {
@@ -198,6 +198,22 @@ impl Epic {
 
         Ok(epic)
     }
+    /// Writes the `Epic` to the file it is associated with.
+    pub fn write(&mut self) -> Result<(), DbError> {
+        // Attempt to open file
+        let mut writer = if let Ok(f) = OpenOptions::new().write(true).open::<&Path>(self.file_path.as_ref()) {
+            BufWriter::new(f)
+        } else {
+            return Err(DbError::FileLoadError(format!("unable to open file: {:?}", self.file_path.to_str())));
+        };
+
+        // Encode the tag of `self`
+        let epic_tag = self.encode();
+        writer.write_all(&epic_tag).map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id)))?;
+        // writer.write_all(self.name.as_bytes())
+
+        todo!()
+    }
 }
 
 unsafe impl Send for Epic {}
@@ -212,18 +228,16 @@ impl BytesEncode for Epic {
         for i in 0..4 {
             encoded_bytes[i] = ((self.id >> i * 8) & 0xff) as u8;
         }
-
+        let name_bytes_len = self.name.as_bytes().len();
         for i in 4..8 {
-            encoded_bytes[i] = (((self.name.len() as u32) >> (i % 4) * 8) & 0xff) as u8;
+            encoded_bytes[i] = (((name_bytes_len as u32) >> (i % 4) * 8) & 0xff) as u8;
         }
-
+        let description_bytes_len = self.description.as_bytes().len();
         for i in 8..12 {
-            encoded_bytes[i] = (((self.description.len() as u32) >> (i % 4) * 8) & 0xff) as u8;
+            encoded_bytes[i] = (((description_bytes_len as u32) >> (i % 4) * 8) & 0xff) as u8;
         }
-
         // Read status byte
         encoded_bytes[12] = self.status.into();
-
         encoded_bytes
     }
 
@@ -285,23 +299,19 @@ impl BytesEncode for Story {
 
     fn encode(&self) -> Self::Tag {
         let mut encoded_bytes = [0_u8; 13];
-
         for i in 0..4 {
             encoded_bytes[i] = ((self.id >> (i * 8)) & 0xff) as u8;
         }
-
+        let name_bytes_len = self.name.as_bytes().len();
         for i in 4..8 {
-            encoded_bytes[i] = (((self.name.len() as u32) >> (i % 4) * 8) & 0xff) as u8;
+            encoded_bytes[i] = (((name_bytes_len as u32) >> (i % 4) * 8) & 0xff) as u8;
         }
-
+        let description_bytes_len = self.description.as_bytes().len();
         for i in 8..12 {
-            encoded_bytes[i] = (((self.description.len() as u32) >> (i % 4) * 8) & 0xff) as u8;
+            encoded_bytes[i] = (((description_bytes_len as u32) >> (i % 4) * 8) & 0xff) as u8;
         }
-
         let status_byte: u8 = self.status.into();
-
         encoded_bytes[12] = status_byte;
-
         encoded_bytes
     }
 
@@ -310,19 +320,15 @@ impl BytesEncode for Story {
         for i in 0..4 {
             id ^= (tag[i] as u32) << (i * 8);
         }
-
         let mut name_len = 0;
         for i in 4..8 {
             name_len ^= (tag[i] as u32) << ((i % 4) * 8);
         }
-
         let mut description_len = 0;
         for i in 8..12 {
             description_len ^= (tag[i] as u32) << ((i % 4) * 8);
         }
-
         let status_byte = tag[12];
-
         (id, name_len, description_len, status_byte)
     }
 }
@@ -366,6 +372,7 @@ pub enum DbError {
     FileLoadError(String),
     FileReadError(String),
     ParseError(String),
+    FileWriteError(String),
 }
 
 
@@ -376,7 +383,6 @@ impl TagDecoding for DecodeTag {}
 type EncodeTag = [u8; 13];
 
 impl TagEncoding for EncodeTag {}
-
 
 
 /// Marker trait for types that represent tag encodings
