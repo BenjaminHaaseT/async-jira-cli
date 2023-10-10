@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::io::{self, Seek, SeekFrom, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
 use std::convert::{TryFrom, Into, AsRef};
+use std::cmp::PartialEq;
 
 /// A top level abstraction for the database. Handles all of the reads and writes to the data base.
 pub struct DbState {
@@ -78,7 +79,7 @@ impl DbState {
 }
 
 /// A struct that encapsulates all pertinent information and behaviors for a single epic.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Epic {
     /// The unique identifier of the epic
     id: u32,
@@ -309,7 +310,7 @@ impl BytesEncode for Epic {
 
 
 /// A struct that encapsulates all pertinent information and behaviors for a single story.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Story {
     id: u32,
     name: String,
@@ -379,6 +380,18 @@ pub enum Status {
     InProgress,
     Resolved,
     Closed,
+}
+
+impl PartialEq for Status {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Status::Open, Status::Open)
+            | (Status::InProgress, Status::InProgress)
+            | (Status::Resolved, Status::Resolved)
+            | (Status::Closed, Status::Closed) => true,
+            _ => false
+        }
+    }
 }
 
 impl TryFrom<u8> for Status {
@@ -514,7 +527,7 @@ mod test {
     }
 
     #[test]
-    fn test_create_and_write_epic_to_file() {
+    fn test_epic_create_write_and_load_from_file() {
         let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
         test_file_path.push("epic1.txt");
 
@@ -523,7 +536,7 @@ mod test {
             String::from("Test Epic 1"),
             String::from("A simple test epic"),
             Status::Open,
-            test_file_path,
+            test_file_path.clone(),
             HashMap::new());
 
         println!("{:?}", epic);
@@ -534,7 +547,14 @@ mod test {
 
         assert!(write_result.is_ok());
 
+        // load the epic from the file
+        let loaded_epic_result = Epic::load(test_file_path);
+        println!("{:?}", loaded_epic_result);
+        assert!(loaded_epic_result.is_ok());
 
+        let loaded_epic = loaded_epic_result.unwrap();
+        // The two epics must be equal
+        assert_eq!(epic, loaded_epic);
 
     }
 }
