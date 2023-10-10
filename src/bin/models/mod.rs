@@ -201,7 +201,7 @@ impl Epic {
     /// Writes the `Epic` to the file it is associated with.
     pub fn write(&mut self) -> Result<(), DbError> {
         // Attempt to open file
-        let mut writer = if let Ok(f) = OpenOptions::new().write(true).open::<&Path>(self.file_path.as_ref()) {
+        let mut writer = if let Ok(f) = OpenOptions::new().write(true).create(true).open::<&Path>(self.file_path.as_ref()) {
             BufWriter::new(f)
         } else {
             return Err(DbError::FileLoadError(format!("unable to open file: {:?}", self.file_path.to_str())));
@@ -511,5 +511,30 @@ mod test {
         assert_eq!(epic_name_len, 11);
         assert_eq!(epic_description_len, 18);
         assert_eq!(epic_status_byte, 0);
+    }
+
+    #[test]
+    fn test_create_and_write_epic_to_file() {
+        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
+        test_file_path.push("epic1.txt");
+
+        let mut epic = Epic::new(
+            1,
+            String::from("Test Epic 1"),
+            String::from("A simple test epic"),
+            Status::Open,
+            test_file_path,
+            HashMap::new());
+
+        println!("{:?}", epic);
+
+        let write_result = epic.write();
+
+        println!("{:?}", write_result);
+
+        assert!(write_result.is_ok());
+
+
+
     }
 }
