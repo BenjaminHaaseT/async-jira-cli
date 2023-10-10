@@ -220,10 +220,6 @@ impl BytesEncode for Epic {
         for i in 8..12 {
             encoded_bytes[i] = (((self.description.len() as u32) >> (i % 4) * 8) & 0xff) as u8;
         }
-        //
-        // for i in 12..16 {
-        //     encoded_bytes[i] = (((self.file_path.len() as u32) >> (i % 4) * 8) & 0xff) as u8;
-        // }
 
         // Read status byte
         encoded_bytes[12] = self.status.into();
@@ -249,12 +245,6 @@ impl BytesEncode for Epic {
         for i in 8..12 {
             description_len ^= (tag[i] as u32) << ((i % 4) * 8);
         }
-
-        // // decode length of path
-        // let mut path_len = 0_u32;
-        // for i in 12..16 {
-        //     path_len ^= (tag[i] as u32) << ((i % 4) * 8);
-        // }
 
         // decode status byte
         let status_byte = tag[12];
@@ -434,5 +424,46 @@ mod test {
         assert_eq!(12, story_name_len);
         assert_eq!(19, story_description_len);
         assert_eq!(0, story_status_byte);
+    }
+
+    #[test]
+    fn create_epic_should_work() {
+        let epic = Epic::new(
+            1,
+            String::from("Test Epic 1"),
+            String::from("A simple test epic"),
+            Status::Open,
+            PathBuf::new(),
+            HashMap::new());
+
+        println!("{:?}", epic);
+
+        assert!(true);
+    }
+
+    #[test]
+    fn epic_encode_decode_should_work() {
+        let epic = Epic::new(
+            1,
+            String::from("Test Epic 1"),
+            String::from("A simple test epic"),
+            Status::Open,
+            PathBuf::new(),
+            HashMap::new());
+
+        // Attempt to encode the epic
+        let epic_tag = epic.encode();
+
+        println!("{:?}", epic_tag);
+
+        assert_eq!(epic_tag, [1, 0, 0, 0, 11, 0, 0, 0, 18, 0, 0, 0, 0]);
+
+        // Attempt to decode the encoded tag
+        let (epic_id, epic_name_len, epic_description_len, epic_status_byte) = Epic::decode(epic_tag);
+
+        assert_eq!(epic_id, 1);
+        assert_eq!(epic_name_len, 11);
+        assert_eq!(epic_description_len, 18);
+        assert_eq!(epic_status_byte, 0);
     }
 }
