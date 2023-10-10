@@ -207,12 +207,51 @@ impl Epic {
             return Err(DbError::FileLoadError(format!("unable to open file: {:?}", self.file_path.to_str())));
         };
 
-        // Encode the tag of `self`
+        // Encode the tag of `self` and write epic data to file
         let epic_tag = self.encode();
-        writer.write_all(&epic_tag).map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id)))?;
-        // writer.write_all(self.name.as_bytes())
+        writer.write_all(&epic_tag)
+            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id)))?;
+        writer.write_all(self.name.as_bytes())
+            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} name to file", self.id)))?;
+        writer.write_all(self.description.as_bytes())
+            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} description to file", self.id)))?;
 
-        todo!()
+        // Now write stories to file
+        for (story_id, story) in &self.stories {
+            let story_tag = story.encode();
+            writer.write_all(&story_tag)
+                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} tag to file", *story_id)))?;
+            writer.write_all(story.name.as_bytes())
+                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} name to file", story.name.as_str())))?;
+            writer.write_all(story.description.as_bytes())
+                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} description to file", story.description.as_str())))?;
+        }
+
+        Ok(())
+    }
+    /// Adds a new story to the `Epic`. Returns a `Result<(), DbError>`, the `Ok` variant if successful,
+    /// and `Err` variant if unsuccessful.
+    pub fn add_story(&mut self, story: Story) -> Result<(), DbError> {
+        if self.stories.contains_key(&story.id) {
+            return Err(DbError::IdConflict(format!("a story with id: {} already exists for this epic", story.id)));
+        } else {
+            self.stories.insert(story.id, story);
+            Ok(())
+        }
+    }
+    /// Updates the status of `Epic`.
+    pub fn update_status(&mut self, status: Status) {
+        self.status = status;
+    }
+    /// Deletes a story from the `Epic`. Returns a `Result<(), DbError>`, the `Ok` variant if successful,
+    /// and `Err` variant if unsuccessful.
+    pub fn delete_story(&mut self, story_id: u32) -> Result<(), DbError> {
+        if !self.stories.contains_key(&story_id) {
+            return Err(DbError::IdConflict(format!("no story with id: {} present", story_id)));
+        } else {
+            self.stories.remove(&story_id);
+            Ok(())
+        }
     }
 }
 
@@ -373,6 +412,7 @@ pub enum DbError {
     FileReadError(String),
     ParseError(String),
     FileWriteError(String),
+    IdConflict(String),
 }
 
 
