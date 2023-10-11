@@ -1,7 +1,6 @@
 //! Module that contains the structs that models the database.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
 use std::fs::{self, DirBuilder, ReadDir, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::error::Error;
@@ -21,7 +20,7 @@ pub struct DbState {
 
 impl DbState {
     /// Associated method for creating a new `DbState`.
-    pub fn create(db_dir: String, db_file_name: String, epic_dir: String) -> DbState {
+    pub fn new(db_dir: String, db_file_name: String, epic_dir: String) -> DbState {
         let mut file_path = PathBuf::from(db_dir.as_str());
         file_path.push(db_file_name.as_str());
         DbState {
@@ -64,7 +63,7 @@ impl DbState {
             file_path: root_path,
         })
     }
-
+    /// Associated helper function. Handles reading a line of text from the db file.
     fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
         let (id_str, path_str) = match line.find(',') {
             Some(idx) => (&line[..idx], &line[idx+1..]),
@@ -75,6 +74,34 @@ impl DbState {
             .map_err(|_e| DbError::FileReadError(format!("unable to parse epic id: {}", id_str)))?;
         let path = PathBuf::from(path_str);
         Ok((id, path))
+    }
+    /// Method to create a new `Epic` and add it to the `DbState`. Returns a `Result<(), DbError>,
+    /// The `Ok` variant if the `Epic` was added successfully, otherwise it returns the `Err` variant.
+    pub fn add_epic(&mut self, id: u32, name: String, description: String) -> Result<(), DbError> {
+        if self.epics.contains_key(&id) {
+            return Err(DbError::IdConflict(format!("error: unable to add epic with id: {id} since an epic with that id already exists")));
+        }
+        // Construct epic path name
+        let epic_fname = format!("epic{id}.txt");
+        let mut epic_pathname = self.file_path.clone();
+        epic_pathname.push(self.epic_dir.clone());
+        epic_pathname.push(epic_fname);
+        self.epics.insert(id, Epic::new(id, name, description, Status::Open, epic_pathname, HashMap::new()));
+        Ok(())
+    }
+    /// Method to get a mutable reference to an `Epic` contained in the `DbState`, for writing. Returns an `Option<&mut Epic>`.
+    /// The `Some` variant if the `Epic` is contained in the `DbState`, otherwise it returns the `None` variant.
+    pub fn get_epic_mut(&mut self, id: u32) -> Option<&mut Epic> {
+        self.epics.get_mut(&id)
+    }
+    /// Returns a `bool`, true if the `DbState` contains an `Epic` with `id`, false otherwise
+    pub fn contains_epic(&self, id: u32) -> bool {
+        self.epics.contains_key(&id)
+    }
+    /// Method to get a shared reference to an `Epic` contained in the `DbState`. Returns an `Option<&Epic>`.
+    /// The `Some` variant if the `Epic` is contained in the `DbState`, otherwise it returns the `None` variant.
+    pub fn get_epic(&self, id: u32) -> Option<&Epic> {
+        self.epics.get(&id)
     }
 }
 
