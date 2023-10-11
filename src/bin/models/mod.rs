@@ -244,6 +244,7 @@ impl Epic {
     pub fn update_status(&mut self, status: Status) {
         self.status = status;
     }
+
     /// Deletes a story from the `Epic`. Returns a `Result<(), DbError>`, the `Ok` variant if successful,
     /// and `Err` variant if unsuccessful.
     pub fn delete_story(&mut self, story_id: u32) -> Result<(), DbError> {
@@ -310,7 +311,7 @@ impl BytesEncode for Epic {
 
 
 /// A struct that encapsulates all pertinent information and behaviors for a single story.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Story {
     id: u32,
     name: String,
@@ -556,5 +557,137 @@ mod test {
         // The two epics must be equal
         assert_eq!(epic, loaded_epic);
 
+    }
+
+    #[test]
+    fn test_epic_create_write_load_and_add_stories() {
+        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
+        test_file_path.push("epic2.txt");
+
+        let mut epic = Epic::new(
+            2,
+            String::from("Test Epic 2"),
+            String::from("A simple test epic"),
+            Status::Open,
+            test_file_path.clone(),
+            HashMap::new());
+
+        println!("{:?}", epic);
+
+        let test_story1 = Story::new(3, String::from("A Test Story"), String::from("A simple test story"), Status::Open);
+        let test_story2 = Story::new(4, String::from("A test Story"), String::from("A simple test story"), Status::Open);
+        let test_story3 = Story::new(5, String::from("A different test Story"), String::from("Another simple test story"), Status::InProgress);
+
+        assert!(epic.add_story(test_story1.clone()).is_ok());
+        assert!(epic.add_story(test_story2.clone()).is_ok());
+        assert!(epic.add_story(test_story3.clone()).is_ok());
+
+        println!("{:?}", epic);
+
+        assert!(epic.write().is_ok());
+
+        // Test loading the epic from the file again and ensure they are equal
+        let loaded_epic_result = Epic::load(test_file_path.clone());
+
+        println!("{:?}", loaded_epic_result);
+
+        assert!(loaded_epic_result.is_ok());
+
+        let mut loaded_epic = loaded_epic_result.unwrap();
+
+        assert_eq!(loaded_epic, epic);
+
+        assert!(epic.add_story(test_story1.clone()).is_err());
+        assert!(epic.add_story(test_story2.clone()).is_err());
+        assert!(epic.add_story(test_story3.clone()).is_err());
+
+        assert!(loaded_epic.add_story(test_story1.clone()).is_err());
+        assert!(loaded_epic.add_story(test_story2.clone()).is_err());
+        assert!(loaded_epic.add_story(test_story3.clone()).is_err());
+    }
+
+    #[test]
+    fn test_epic_delete_story() {
+        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
+        test_file_path.push("epic3.txt");
+
+        let mut epic = Epic::new(
+            3,
+            String::from("Test Epic 3"),
+            String::from("A simple test epic"),
+            Status::Open,
+            test_file_path.clone(),
+            HashMap::new());
+
+        let test_story1 = Story::new(6, String::from("A Test Story"), String::from("A simple test story"), Status::Open);
+        let test_story2 = Story::new(7, String::from("A test Story"), String::from("A simple test story"), Status::Open);
+        let test_story3 = Story::new(8, String::from("A different test Story"), String::from("Another simple test story"), Status::InProgress);
+
+        assert!(epic.add_story(test_story1.clone()).is_ok());
+        assert!(epic.add_story(test_story2.clone()).is_ok());
+        assert!(epic.add_story(test_story3.clone()).is_ok());
+
+        println!("{:?}", epic);
+
+        assert!(epic.write().is_ok());
+
+        let loaded_epic_result = Epic::load(test_file_path.clone());
+
+        assert!(loaded_epic_result.is_ok());
+
+        let mut loaded_epic = loaded_epic_result.unwrap();
+
+        println!("{:?}", loaded_epic);
+
+        assert_eq!(loaded_epic, epic);
+
+        assert!(epic.delete_story(6).is_ok());
+        assert!(loaded_epic.delete_story(6).is_ok());
+
+        println!("{:?}", epic);
+        println!("{:?}", loaded_epic);
+
+        assert_eq!(loaded_epic, epic);
+
+        assert!(epic.delete_story(6).is_err());
+        assert!(loaded_epic.delete_story(6).is_err());
+    }
+
+    #[test]
+    fn test_epic_update_status() {
+        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
+        test_file_path.push("epic4.txt");
+
+        let mut epic = Epic::new(
+            4,
+            String::from("Test Epic 4"),
+            String::from("A simple test epic"),
+            Status::Open,
+            test_file_path.clone(),
+            HashMap::new());
+
+        println!("{:?}", epic);
+
+        assert!(epic.write().is_ok());
+
+        let loaded_epic_result = Epic::load(test_file_path.clone());
+
+        println!("{:?}", loaded_epic_result);
+
+        assert!(loaded_epic_result.is_ok());
+
+        let mut loaded_epic = loaded_epic_result.unwrap();
+
+        println!("{:?}", loaded_epic);
+
+        assert_eq!(epic, loaded_epic);
+
+        epic.update_status(Status::InProgress);
+
+        assert_eq!(epic.status, Status::InProgress);
+
+        loaded_epic.update_status(Status::InProgress);
+
+        assert_eq!(loaded_epic, epic);
     }
 }
