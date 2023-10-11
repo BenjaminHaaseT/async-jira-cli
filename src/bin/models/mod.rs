@@ -12,9 +12,13 @@ use std::cmp::PartialEq;
 pub struct DbState {
     /// Holds the mapping from epic id's to `Epic`s
     epics: HashMap<u32, Epic>,
+    /// A string representing the path to the database directory
     db_dir: String,
+    /// A string representing the database file name e.g. db.txt
     db_file_name: String,
+    /// A string representing the database epics directory
     epic_dir: String,
+    /// A `PathBuf` of the absolute path to the database file
     file_path: PathBuf,
 }
 
@@ -62,6 +66,16 @@ impl DbState {
             db_file_name,
             file_path: root_path,
         })
+    }
+    /// Method for writing the contents of the `DbState` to its associated file. Returns a `Result<(), DbError>`
+    /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
+    pub fn write(&mut self) -> Result<(), DbError> {
+        todo!()
+    }
+    /// Removes an epic with `id` from the `DbState`. Returns a `Result<Epic, DbError>`,
+    /// the `Ok` variant if the delete was successful, otherwise the `Err` variant.
+    pub fn delete_epic(&mut self, id: u32) -> Result<Epic, DbError> {
+        self.epics.remove(&id).ok_or(DbError::DoesNotExist(format!("no epic with id: {id}")))
     }
     /// Associated helper function. Handles reading a line of text from the db file.
     fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
@@ -227,7 +241,7 @@ impl Epic {
         Ok(epic)
     }
     /// Writes the `Epic` to the file it is associated with.
-    pub fn write(&mut self) -> Result<(), DbError> {
+    pub fn write(&self) -> Result<(), DbError> {
         // Attempt to open file
         let mut writer = if let Ok(f) = OpenOptions::new().write(true).create(true).open::<&Path>(self.file_path.as_ref()) {
             BufWriter::new(f)
@@ -454,6 +468,7 @@ pub enum DbError {
     ParseError(String),
     FileWriteError(String),
     IdConflict(String),
+    DoesNotExist(String),
 }
 
 
@@ -716,5 +731,10 @@ mod test {
         loaded_epic.update_status(Status::InProgress);
 
         assert_eq!(loaded_epic, epic);
+    }
+
+    #[test]
+    fn create_dbstate_should_work() {
+
     }
 }
