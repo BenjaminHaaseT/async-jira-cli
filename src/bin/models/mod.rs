@@ -111,7 +111,6 @@ impl DbState {
             Some(idx) => (&line[..idx], &line[idx+1..]),
             None => return Err(DbError::FileReadError(format!("unable to parse data base line: {}", line))),
         };
-
         let id = id_str.parse::<u32>()
             .map_err(|_e| DbError::FileReadError(format!("unable to parse epic id: {}", id_str)))?;
         let path = PathBuf::from(path_str);
