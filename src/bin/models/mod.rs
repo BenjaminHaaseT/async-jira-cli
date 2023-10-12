@@ -3,12 +3,21 @@
 use std::collections::HashMap;
 use std::fs::{self, DirBuilder, ReadDir, File, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::ffi::{OsStr, OsString};
+
+#[cfg(target_os = "unix")]
+use std::os::ffi::{OsStrExt, OsStringExt};
+
+#[cfg(target_os = "windows")]
+use std::os::ffi::{OsStrExt, OsStringExt};
+
 use std::error::Error;
 use std::io::{self, Seek, SeekFrom, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
 use std::convert::{TryFrom, Into, AsRef};
 use std::cmp::PartialEq;
 
 /// A top level abstraction for the database. Handles all of the reads and writes to the data base.
+#[derive(Debug, PartialEq)]
 pub struct DbState {
     /// Holds the mapping from epic id's to `Epic`s
     epics: HashMap<u32, Epic>,
@@ -21,6 +30,7 @@ pub struct DbState {
     /// A `PathBuf` of the absolute path to the database file
     file_path: PathBuf,
 }
+
 
 impl DbState {
     /// Associated method for creating a new `DbState`.
@@ -67,10 +77,28 @@ impl DbState {
             file_path: root_path,
         })
     }
-    /// Method for writing the contents of the `DbState` to its associated file. Returns a `Result<(), DbError>`
+    /// Method for writing the contents of the `DbState` to its associated file. Will create a new
+    /// file if an associated db file has not been created, otherwise it will overwrite the
+    /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
-    pub fn write(&mut self) -> Result<(), DbError> {
-        todo!()
+    pub fn write(&self) -> Result<(), DbError> {
+        let mut writer = if let Ok(f) = OpenOptions::new().write(true).truncate(true).create(true).open(&self.file_path) {
+            BufWriter::new(f)
+        } else {
+            return Err(DbError::FileLoadError(format!("unable to open/create associated file: {:?}", self.file_path.to_str())))
+        };
+
+        for (id, epic) in &self.epics {
+            // TODO: make general for all operating systems
+            let epic_file_path_string = format!("{}/{}/epic{id}.txt", &self.db_dir, &self.epic_dir);
+            let line = format!("{},{}\n", id, epic_file_path_string).into_bytes();
+            writer.write(line.as_slice())
+                .map_err(
+                    |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
+            epic.write()?;
+        }
+
+        Ok(())
     }
     /// Removes an epic with `id` from the `DbState`. Returns a `Result<Epic, DbError>`,
     /// the `Ok` variant if the delete was successful, otherwise the `Err` variant.
@@ -97,7 +125,7 @@ impl DbState {
         }
         // Construct epic path name
         let epic_fname = format!("epic{id}.txt");
-        let mut epic_pathname = self.file_path.clone();
+        let mut epic_pathname = PathBuf::from(&self.db_dir);
         epic_pathname.push(self.epic_dir.clone());
         epic_pathname.push(epic_fname);
         self.epics.insert(id, Epic::new(id, name, description, Status::Open, epic_pathname, HashMap::new()));
@@ -240,7 +268,8 @@ impl Epic {
 
         Ok(epic)
     }
-    /// Writes the `Epic` to the file it is associated with.
+    /// Writes the `Epic` to the file it is associated with, creates a new file if an associated
+    /// file does not exist.
     pub fn write(&self) -> Result<(), DbError> {
         // Attempt to open file
         let mut writer = if let Ok(f) = OpenOptions::new().write(true).create(true).open::<&Path>(self.file_path.as_ref()) {
@@ -734,7 +763,94 @@ mod test {
     }
 
     #[test]
-    fn create_dbstate_should_work() {
+    fn test_create_db_state_should_work() {
+        let db_state = DbState::new(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_db.txt".to_string(),
+            "test_epics".to_string()
+        );
 
+        println!("{:?}", db_state);
+        assert!(true);
+    }
+
+    #[test]
+    fn test_create_db_state_add_epics_write_and_read() {
+        let mut db_state = DbState::new(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_db.txt".to_string(),
+            "test_epics".to_string()
+        );
+
+        assert!(db_state.add_epic(9, "Test Epic".to_string(), "A simple test epic".to_string()).is_ok());
+        assert!(db_state.add_epic(10, "Test Epic".to_string(), "A simple test epic".to_string()).is_ok());
+        assert!(db_state.add_epic(11, "Test Epic".to_string(), "A simple test epic".to_string()).is_ok());
+
+        assert!(db_state.add_epic(9, "Test Epic".to_string(), "A simple test epic".to_string()).is_err());
+
+        println!("{:?}", db_state);
+
+        assert!(db_state.write().is_ok());
+
+        let mut db_state_prime_result = DbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_db.txt".to_string(),
+            "test_epics".to_string()
+        );
+
+        println!("{:?}", db_state_prime_result);
+
+        assert!(db_state_prime_result.is_ok());
+
+        let mut db_state_prime = db_state_prime_result.unwrap();
+
+        assert_eq!(db_state, db_state_prime);
+    }
+
+    #[test]
+    fn test_db_state_add_delete_epic() {
+        let mut db_state = DbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_db.txt".to_string(),
+            "test_epics".to_string()
+        ).expect("should load");
+
+        println!("{:?}", db_state);
+
+        db_state.add_epic(
+            17,
+            "Test Epic".to_string(),
+            "A specially added test epic".to_string()
+        ).expect("should add epic");
+
+        println!("{:?}", db_state);
+
+        assert!(db_state.write().is_ok());
+
+        let mut db_state = DbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_db.txt".to_string(),
+            "test_epics".to_string()
+        ).expect("should load");
+
+        println!("{:?}", db_state);
+
+        assert!(db_state.contains_epic(17));
+
+        assert!(db_state.delete_epic(17).is_ok());
+
+        assert!(db_state.delete_epic(17).is_err());
+
+        assert!(db_state.write().is_ok());
+
+        let mut db_state = DbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_db.txt".to_string(),
+            "test_epics".to_string()
+        ).expect("should load");
+
+        println!("{:?}", db_state);
+
+        assert!(!db_state.contains_epic(17));
     }
 }
