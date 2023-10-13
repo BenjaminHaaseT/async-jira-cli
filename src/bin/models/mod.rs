@@ -15,6 +15,11 @@ use std::error::Error;
 use std::io::{self, Seek, SeekFrom, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
 use std::convert::{TryFrom, Into, AsRef};
 use std::cmp::PartialEq;
+use async_std::{sync::{Arc, RwLock}};
+
+pub mod prelude {
+    pub use super::*;
+}
 
 /// A top level abstraction for the database. Handles all of the reads and writes to the data base.
 #[derive(Debug, PartialEq)]
@@ -29,8 +34,9 @@ pub struct DbState {
     epic_dir: String,
     /// A `PathBuf` of the absolute path to the database file
     file_path: PathBuf,
+    /// For giving items a unique id
+    last_unique_id: u32,
 }
-
 
 impl DbState {
     /// Associated method for creating a new `DbState`.
@@ -43,6 +49,7 @@ impl DbState {
             db_file_name,
             epic_dir,
             file_path,
+            last_unique_id: 0,
         }
     }
 
@@ -61,12 +68,14 @@ impl DbState {
 
         let mut epics = HashMap::new();
         let mut lines = file.lines();
+        let mut max_id = 0;
 
         while let Some(line) = lines.next() {
             let line = line.map_err(|e| DbError::FileReadError(db_file_name.clone()))?;
             let (epic_id, epic_file_path) = DbState::parse_db_line(line)?;
-            let epic = Epic::load(epic_file_path)?;
+            let epic = Epic::load(epic_file_path, &mut max_id)?;
             epics.insert(epic_id, epic);
+
         }
 
         Ok(DbState {
@@ -75,8 +84,10 @@ impl DbState {
             db_dir,
             db_file_name,
             file_path: root_path,
+            last_unique_id: max_id,
         })
     }
+
     /// Method for writing the contents of the `DbState` to its associated file. Will create a new
     /// file if an associated db file has not been created, otherwise it will overwrite the
     /// contents of the associated file.  Returns a `Result<(), DbError>`
@@ -100,11 +111,13 @@ impl DbState {
 
         Ok(())
     }
+
     /// Removes an epic with `id` from the `DbState`. Returns a `Result<Epic, DbError>`,
     /// the `Ok` variant if the delete was successful, otherwise the `Err` variant.
     pub fn delete_epic(&mut self, id: u32) -> Result<Epic, DbError> {
         self.epics.remove(&id).ok_or(DbError::DoesNotExist(format!("no epic with id: {id}")))
     }
+
     /// Associated helper function. Handles reading a line of text from the db file.
     fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
         let (id_str, path_str) = match line.find(',') {
@@ -116,34 +129,95 @@ impl DbState {
         let path = PathBuf::from(path_str);
         Ok((id, path))
     }
+
     /// Method to create a new `Epic` and add it to the `DbState`. Returns a `Result<(), DbError>,
     /// The `Ok` variant if the `Epic` was added successfully, otherwise it returns the `Err` variant.
-    pub fn add_epic(&mut self, id: u32, name: String, description: String) -> Result<(), DbError> {
-        if self.epics.contains_key(&id) {
-            return Err(DbError::IdConflict(format!("error: unable to add epic with id: {id} since an epic with that id already exists")));
-        }
-        // Construct epic path name
+    pub fn add_epic(&mut self, name: String, description: String) -> u32 {
+        self.last_unique_id += 1;
+        let id = self.last_unique_id;
         let epic_fname = format!("epic{id}.txt");
         let mut epic_pathname = PathBuf::from(&self.db_dir);
         epic_pathname.push(self.epic_dir.clone());
         epic_pathname.push(epic_fname);
         self.epics.insert(id, Epic::new(id, name, description, Status::Open, epic_pathname, HashMap::new()));
-        Ok(())
+        self.last_unique_id
     }
+
     /// Method to get a mutable reference to an `Epic` contained in the `DbState`, for writing. Returns an `Option<&mut Epic>`.
     /// The `Some` variant if the `Epic` is contained in the `DbState`, otherwise it returns the `None` variant.
     pub fn get_epic_mut(&mut self, id: u32) -> Option<&mut Epic> {
         self.epics.get_mut(&id)
     }
+
     /// Returns a `bool`, true if the `DbState` contains an `Epic` with `id`, false otherwise
     pub fn contains_epic(&self, id: u32) -> bool {
         self.epics.contains_key(&id)
     }
+
     /// Method to get a shared reference to an `Epic` contained in the `DbState`. Returns an `Option<&Epic>`.
     /// The `Some` variant if the `Epic` is contained in the `DbState`, otherwise it returns the `None` variant.
     pub fn get_epic(&self, id: u32) -> Option<&Epic> {
         self.epics.get(&id)
     }
+
+    /// Method for adding a new story to `Epic` with `epic_id`. Returns a `Result<(), DbError>`,
+    /// The `Ok` variant if `Story` was successfully added otherwise the `Err` variant.
+    pub fn add_story(&mut self, epic_id: u32, story_name: String, story_description: String) -> Result<(), DbError> {
+        if !self.epics.contains_key(&epic_id) {
+            return Err(DbError::DoesNotExist("no epic with id: {epic_id}".to_string()));
+        }
+        self.last_unique_id += 1;
+        let new_story = Story::new(self.last_unique_id, story_name, story_description, Status::Open);
+        self.epics.get_mut(&epic_id).unwrap().add_story(new_story)
+    }
+
+    /// Method for deleting a `Story` with `story_id` from `Epic` with `epic_id`. Returns a `Result<u32, DbError>`
+    /// the `Ok` variant if the `Story` was successfully deleted, otherwise the `Err` variant.
+    pub fn delete_story(&mut self, epic_id: u32, story_id: u32) -> Result<u32, DbError> {
+        if !self.epics.contains_key(&epic_id) {
+            return Err(DbError::DoesNotExist(format!("unable to delete story, no epic with id: {}", epic_id)));
+        }
+        match self.epics.get_mut(&epic_id).unwrap().delete_story(story_id) {
+            Ok(_) => Ok(story_id),
+            Err(e) => Err(e)
+        }
+    }
+}
+
+/// A top level asynchronous abstraction for the database. Handles all of the reads and writes to the data base.
+/// Essentially an asynchronous version of `DbState`
+#[derive(Debug, PartialEq)]
+pub struct AsyncDbState {
+    /// Holds the mapping from epic id's to `Epic`s
+    epics: HashMap<u32, Arc<RwLock<Epic>>>,
+    /// A string representing the path to the database directory
+    db_dir: String,
+    /// A string representing the database file name e.g. db.txt
+    db_file_name: String,
+    /// A string representing the database epics directory
+    epic_dir: String,
+    /// A `PathBuf` of the absolute path to the database file
+    file_path: PathBuf,
+    /// For giving items a unique id
+    last_unique_id: u32,
+}
+
+impl AsyncDbState {
+    /// Associated method for creating a new `AsyncDbState`.
+    pub fn new(db_dir: String, db_file_name: String, epic_dir: String) -> AsyncDbState {
+        let mut file_path = PathBuf::from(db_dir.as_str());
+        file_path.push(db_file_name.as_str());
+        AsyncDbState {
+            epics: HashMap::new(),
+            db_dir,
+            db_file_name,
+            epic_dir,
+            file_path,
+            last_unique_id: 0,
+        }
+    }
+
+
 }
 
 /// A struct that encapsulates all pertinent information and behaviors for a single epic.
@@ -177,7 +251,7 @@ impl Epic {
     }
     /// Associated method for loading a `Epic` from `path`. The method is fallible, and so a `Result<Epic, DbError>` is returned,
     /// where the `Err` variant is the unsuccessful `load`.
-    pub fn load(path: PathBuf) -> Result<Epic, DbError> {
+    pub fn load(path: PathBuf, max_id: &mut u32) -> Result<Epic, DbError> {
         // Attempt to open the file
         let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path.clone()) {
             BufReader::new(f)
@@ -217,6 +291,7 @@ impl Epic {
         // Create stories hashmap and tag for the current story if any
         let mut stories = HashMap::new();
         let mut cur_story_tag = [0_u8; 13];
+        // let mut max_id = 0;
 
         loop {
             // Match for any errors when reading the tag from the file
@@ -251,7 +326,7 @@ impl Epic {
             let story = Story::new(story_id, story_name, story_description, story_status);
 
             stories.insert(story_id, story);
-
+            *max_id = u32::max(*max_id, story_id);
         }
 
         // Create the Epic and return the result
@@ -264,14 +339,14 @@ impl Epic {
             path,
             stories
         );
-
+        *max_id = u32::max(id, *max_id);
         Ok(epic)
     }
     /// Writes the `Epic` to the file it is associated with, creates a new file if an associated
     /// file does not exist.
     pub fn write(&self) -> Result<(), DbError> {
         // Attempt to open file
-        let mut writer = if let Ok(f) = OpenOptions::new().write(true).create(true).open::<&Path>(self.file_path.as_ref()) {
+        let mut writer = if let Ok(f) = OpenOptions::new().write(true).create(true).truncate(true).open::<&Path>(self.file_path.as_ref()) {
             BufWriter::new(f)
         } else {
             return Err(DbError::FileLoadError(format!("unable to open file: {:?}", self.file_path.to_str())));
@@ -318,9 +393,20 @@ impl Epic {
     /// and `Err` variant if unsuccessful.
     pub fn delete_story(&mut self, story_id: u32) -> Result<(), DbError> {
         if !self.stories.contains_key(&story_id) {
-            return Err(DbError::IdConflict(format!("no story with id: {} present", story_id)));
+            return Err(DbError::DoesNotExist(format!("no story with id: {} present", story_id)));
         } else {
             self.stories.remove(&story_id);
+            Ok(())
+        }
+    }
+
+    /// Method for updating a stories status. Returns `Result<(), DbError>`, the `Ok` variant if successful,
+    /// and `Err` variant if unsuccessfull.
+    pub fn update_story_status(&mut self, story_id: u32, status: Status) -> Result<(), DbError> {
+        if !self.stories.contains_key(&story_id) {
+            Err(DbError::DoesNotExist(format!("unable to update story status for id: {}", story_id)))
+        } else {
+            self.stories.get_mut(&story_id).unwrap().status = status;
             Ok(())
         }
     }
@@ -617,9 +703,9 @@ mod test {
         println!("{:?}", write_result);
 
         assert!(write_result.is_ok());
-
+        let mut dummy_id = 0;
         // load the epic from the file
-        let loaded_epic_result = Epic::load(test_file_path);
+        let loaded_epic_result = Epic::load(test_file_path, &mut dummy_id);
         println!("{:?}", loaded_epic_result);
         assert!(loaded_epic_result.is_ok());
 
@@ -655,9 +741,9 @@ mod test {
         println!("{:?}", epic);
 
         assert!(epic.write().is_ok());
-
+        let mut dummy_id = 0;
         // Test loading the epic from the file again and ensure they are equal
-        let loaded_epic_result = Epic::load(test_file_path.clone());
+        let loaded_epic_result = Epic::load(test_file_path.clone(), &mut dummy_id);
 
         println!("{:?}", loaded_epic_result);
 
@@ -700,8 +786,8 @@ mod test {
         println!("{:?}", epic);
 
         assert!(epic.write().is_ok());
-
-        let loaded_epic_result = Epic::load(test_file_path.clone());
+        let mut dummy_id = 0;
+        let loaded_epic_result = Epic::load(test_file_path.clone(), &mut dummy_id);
 
         assert!(loaded_epic_result.is_ok());
 
@@ -739,8 +825,8 @@ mod test {
         println!("{:?}", epic);
 
         assert!(epic.write().is_ok());
-
-        let loaded_epic_result = Epic::load(test_file_path.clone());
+        let mut dummy_id = 0;
+        let loaded_epic_result = Epic::load(test_file_path.clone(), &mut dummy_id);
 
         println!("{:?}", loaded_epic_result);
 
@@ -781,11 +867,11 @@ mod test {
             "test_epics".to_string()
         );
 
-        assert!(db_state.add_epic(9, "Test Epic".to_string(), "A simple test epic".to_string()).is_ok());
-        assert!(db_state.add_epic(10, "Test Epic".to_string(), "A simple test epic".to_string()).is_ok());
-        assert!(db_state.add_epic(11, "Test Epic".to_string(), "A simple test epic".to_string()).is_ok());
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()), 1);
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()), 2);
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()), 3);
 
-        assert!(db_state.add_epic(9, "Test Epic".to_string(), "A simple test epic".to_string()).is_err());
+        // assert!(db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()).is_err());
 
         println!("{:?}", db_state);
 
@@ -817,10 +903,9 @@ mod test {
         println!("{:?}", db_state);
 
         db_state.add_epic(
-            17,
             "Test Epic".to_string(),
             "A specially added test epic".to_string()
-        ).expect("should add epic");
+        );
 
         println!("{:?}", db_state);
 
@@ -834,9 +919,9 @@ mod test {
 
         println!("{:?}", db_state);
 
-        assert!(db_state.contains_epic(17));
+        assert!(db_state.contains_epic(4));
 
-        assert!(db_state.delete_epic(17).is_ok());
+        assert!(db_state.delete_epic(4).is_ok());
 
         assert!(db_state.delete_epic(17).is_err());
 
@@ -850,6 +935,45 @@ mod test {
 
         println!("{:?}", db_state);
 
-        assert!(!db_state.contains_epic(17));
+        assert!(!db_state.contains_epic(4));
+    }
+
+    #[test]
+    fn test_db_state_add_delete_story() {
+        let mut db_state = DbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_db.txt".to_string(),
+            "test_epics".to_string()
+        ).expect("should load");
+
+        println!("{:?}", db_state);
+
+        let cur_id = db_state.add_epic("Test Epic".to_string(), "A test Epic for adding/deleting stories".to_string());
+
+        println!("{:?}", cur_id);
+
+        assert!(db_state.add_story(cur_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
+        assert!(db_state.add_story(cur_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
+        assert!(db_state.add_story(cur_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
+
+        println!("{:?}", db_state);
+
+        assert!(db_state.write().is_ok());
+
+        let mut db_state = DbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_db.txt".to_string(),
+            "test_epics".to_string()
+        ).expect("should load");
+
+        println!("{:?}", db_state);
+
+        assert!(db_state.contains_epic(cur_id));
+
+        let cur_story_id = db_state.last_unique_id;
+
+        assert!(db_state.delete_story(cur_id, cur_story_id).is_ok());
+
+        assert!(db_state.delete_story(cur_id, cur_story_id).is_err());
     }
 }
