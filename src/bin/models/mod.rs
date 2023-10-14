@@ -186,7 +186,7 @@ impl DbState {
 
 /// A top level asynchronous abstraction for the database. Handles all of the reads and writes to the data base.
 /// Essentially an asynchronous version of `DbState`
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct AsyncDbState {
     /// Holds the mapping from epic id's to `Epic`s
     epics: HashMap<u32, Arc<RwLock<Epic>>>,
