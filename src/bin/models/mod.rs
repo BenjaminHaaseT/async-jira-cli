@@ -216,8 +216,108 @@ impl AsyncDbState {
             last_unique_id: 0,
         }
     }
+    /// Associated helper function. Handles reading a line of text from the db file.
+    fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
+        let (id_str, path_str) = match line.find(',') {
+            Some(idx) => (&line[..idx], &line[idx+1..]),
+            None => return Err(DbError::FileReadError(format!("unable to parse data base line: {}", line))),
+        };
+        let id = id_str.parse::<u32>()
+            .map_err(|_e| DbError::FileReadError(format!("unable to parse epic id: {}", id_str)))?;
+        let path = PathBuf::from(path_str);
+        Ok((id, path))
+    }
+    /// Associated method for loading a `AsyncDbState` from `db_dir`, `db_file_name` and `epic_dir`.
+    pub fn load(db_dir: String, db_file_name: String, epic_dir: String) -> Result<AsyncDbState, DbError> {
+        // Create file path
+        let mut root_path = PathBuf::from(db_dir.as_str());
+        root_path.push(db_file_name.as_str());
 
+        // Load file
+        let mut file = if let Ok(f) = OpenOptions::new().read(true).open(root_path.clone()) {
+            BufReader::new(f)
+        } else {
+            return Err(DbError::FileLoadError(format!("unable to load file from {}, {}", db_dir.clone(), db_file_name.clone())));
+        };
 
+        let mut epics = HashMap::new();
+        let mut lines = file.lines();
+        let mut max_id = 0;
+
+        while let Some(line) = lines.next() {
+            let line = line.map_err(|e| DbError::FileReadError(db_file_name.clone()))?;
+            let (epic_id, epic_file_path) = AsyncDbState::parse_db_line(line)?;
+            let epic = Epic::load(epic_file_path, &mut max_id)?;
+            epics.insert(epic_id, Arc::new(RwLock::new(epic)));
+
+        }
+
+        Ok(AsyncDbState {
+            epics,
+            epic_dir,
+            db_dir,
+            db_file_name,
+            file_path: root_path,
+            last_unique_id: max_id,
+        })
+    }
+    /// Method for writing the contents of the `AsyncDbState` to its associated file. Will create a new
+    /// file if an associated db file has not been created, otherwise it will overwrite the
+    /// contents of the associated file.  Returns a `Result<(), DbError>`
+    /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
+    ///
+    /// The method is async, since it needs to lock each of the `Epics` behind the `RwLock`.
+    pub async fn write(&self) -> Result<(), DbError> {
+        let mut writer = if let Ok(f) = OpenOptions::new().write(true).truncate(true).create(true).open(&self.file_path) {
+            BufWriter::new(f)
+        } else {
+            return Err(DbError::FileLoadError(format!("unable to open/create associated file: {:?}", self.file_path.to_str())))
+        };
+
+        for (id, epic) in &self.epics {
+            // TODO: make general for all operating systems
+            let epic_file_path_string = format!("{}/{}/epic{id}.txt", &self.db_dir, &self.epic_dir);
+            let line = format!("{},{}\n", id, epic_file_path_string).into_bytes();
+            writer.write(line.as_slice())
+                .map_err(
+                    |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
+            let mut epic_lock = epic.write().await;
+            epic_lock.write()?;
+        }
+
+        Ok(())
+    }
+
+    /// Method to create a new `Epic` and add it to the `AsyncDbState`. Returns a `Result<(), DbError>,
+    /// The `Ok` variant if the `Epic` was added successfully, otherwise it returns the `Err` variant.
+    pub fn add_epic(&mut self, name: String, description: String) -> u32 {
+        self.last_unique_id += 1;
+        let id = self.last_unique_id;
+        let epic_fname = format!("epic{id}.txt");
+        let mut epic_pathname = PathBuf::from(&self.db_dir);
+        epic_pathname.push(self.epic_dir.clone());
+        epic_pathname.push(epic_fname);
+        self.epics.insert(id, Arc::new(RwLock::new(Epic::new(id, name, description, Status::Open, epic_pathname, HashMap::new()))));
+        self.last_unique_id
+    }
+    /// Method to check if an `Epic` with `epic_id` contains in the `AsyncDbState`.
+    pub fn contains_epic(&self, epic_id: u32) -> bool {
+        self.epics.contains_key(&epic_id)
+    }
+    /// Method to get an `Arc<RwLock<Epic>>>` from the `AsyncDbState`. Returns an `Option`,
+    /// The `Some` variant if the `Epic` is contained in the database otherwise the `None` variant.
+    pub fn get_epic(&self, epic_id: u32) -> Option<Arc<RwLock<Epic>>> {
+        match self.epics.get(&epic_id) {
+            Some(epic) => Some(Arc::clone(epic)),
+            None => None
+        }
+    }
+    /// Method to delete an `Epic` from the database, note this method only logically deletes the `Epic`,
+    /// Since the `Epic`s are behind an `Arc` there may be other threads still reading or writing to the epic.
+    pub fn delete_epic(&mut self, epic_id: u32) -> Result<Arc<RwLock<Epic>>, DbError> {
+        self.epics.remove(&epic_id)
+            .ok_or(DbError::DoesNotExist(format!("unable to delete epic with id: {}, epic not contained in database", epic_id)))
+    }
 }
 
 /// A struct that encapsulates all pertinent information and behaviors for a single epic.
@@ -583,8 +683,8 @@ pub enum DbError {
     FileWriteError(String),
     IdConflict(String),
     DoesNotExist(String),
+    ConnectionError(String),
 }
-
 
 type DecodeTag = (u32, u32, u32, u8);
 
