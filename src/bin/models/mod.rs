@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 use std::fs::{self, DirBuilder, ReadDir, File, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::ffi::{OsStr, OsString};
+use std::sync::Arc;
+// use std::ffi::{OsStr, OsString};
 
 #[cfg(target_os = "unix")]
 use std::os::ffi::{OsStrExt, OsStringExt};
@@ -15,7 +16,7 @@ use std::error::Error;
 use std::io::{self, Seek, SeekFrom, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
 use std::convert::{TryFrom, Into, AsRef};
 use std::cmp::PartialEq;
-use async_std::{sync::{Arc, RwLock}};
+use async_std::{sync::RwLock};
 
 pub mod prelude {
     pub use super::*;
@@ -287,7 +288,6 @@ impl AsyncDbState {
 
         Ok(())
     }
-
     /// Method to create a new `Epic` and add it to the `AsyncDbState`. Returns a `Result<(), DbError>,
     /// The `Ok` variant if the `Epic` was added successfully, otherwise it returns the `Err` variant.
     pub fn add_epic(&mut self, name: String, description: String) -> u32 {
