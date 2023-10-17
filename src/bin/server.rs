@@ -17,6 +17,8 @@ use std::collections::HashMap;
 
 mod models;
 use models::prelude::*;
+
+mod events;
 mod interface;
 
 enum Event {
