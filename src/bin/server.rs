@@ -1,4 +1,6 @@
 //! The binary that will run the server for the asynchronous database
+mod models;
+mod events;
 
 use async_std::{
     prelude::*,
@@ -9,16 +11,15 @@ use async_std::{
 use futures::channel::mpsc::{self, Receiver, Sender};
 // use futures::io::AsyncReadExt;
 use futures::sink::SinkExt;
+use uuid::Uuid;
 
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::convert::TryFrom;
 use std::collections::HashMap;
 
-mod models;
 use models::prelude::*;
-
-mod events;
+use events::prelude::*;
 mod interface;
 
 // enum Event {
@@ -166,11 +167,11 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Opt
     let client_stream = Arc::new(client_stream);
     let mut client_stream_reader = &*client_stream;
 
-    // TODO: Add better error handling, i.e. custom connect error handling
-    let peer_addr = client_stream.peer_addr().map_err(|_| DbError::ParseError(format!("unable to parse address from client")))?.to_string();
+    // Create custom id for new client
+    let client_id = Uuid::new_v4();
 
     // Create a new client and send to broker
-    let new_client = Event::NewClient { peer_addr: peer_addr.clone(), stream: client_stream.clone() };
+    let new_client = Event::NewClient { peer_id: client_id.clone(), stream: client_stream.clone() };
     broker_sender.send(Some(new_client))
         .await
         .map_err(|_| DbError::ConnectionError(format!("unable to send client to broker")))?;
@@ -179,7 +180,7 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Opt
 
     while let Ok(_) = client_stream_reader.read_exact(&mut tag).await {
         // TODO: handle the case when input from user is not parse-able ie send a special error event to the broker to send back to the client.
-        match Event::try_from(&tag, client_stream_reader).await {
+        match Event::try_create(client_id.clone(), &tag, client_stream_reader).await {
             Ok(event) => {
                 broker_sender
                     .send(Some(event))
@@ -194,11 +195,11 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Opt
             }
         }
     }
-    // Handle event when client disconnects
-    broker_sender
-        .send(Some(Event::ClientDisconnected))
-        .await
-        .map_err(|_| DbError::ConnectionError(String::from("unable to send event to broker")))?;
+    // TODO: Handle event when client disconnects, need to set up a synchornization method
+    // broker_sender
+    //     .send(Some(Event::ClientDisconnected))
+    //     .await
+    //     .map_err(|_| DbError::ConnectionError(String::from("unable to send event to broker")))?;
     Ok(())
 }
 
@@ -217,18 +218,18 @@ async fn broker(
     channel_buf_size: usize,
 ) -> Result<(), DbError> {
     let mut db_handle = AsyncDbState::load(db_dir, db_file_name, epic_dir)?;
-    let mut clients: HashMap<String, Sender<Response>> = HashMap::new();
+    let mut clients: HashMap<Uuid, Sender<Response>> = HashMap::new();
 
     while let Some(event) = receiver.next().await {
         // Process each event received
         match event {
-            Some(Event::NewClient { peer_addr, stream }) => {
-                if !clients.contains_key(&peer_addr) {
+            Some(Event::NewClient { peer_id, stream }) => {
+                if !clients.contains_key(&peer_id) {
                     let (client_sender, client_receiver) = mpsc::channel::<Response>(channel_buf_size);
-                    clients.insert(peer_addr, client_sender);
+                    clients.insert(peer_id, client_sender);
                     task::spawn(connection_write_loop(stream, client_receiver));
                 } else {
-                    let mut client_sender = clients.get_mut(&peer_addr).unwrap();
+                    let mut client_sender = clients.get_mut(&peer_id).unwrap();
                     //TODO: handle errors with more specificity. Log the error in the case that we can't send a response to the client
                     client_sender.send(Response::ClientAlreadyExists)
                         .await

@@ -7,8 +7,12 @@ use async_std::{
 use uuid::Uuid;
 use crate::models::{Status, DbError};
 
+pub mod prelude {
+    pub use super::*;
+}
+
 /// A struct that is used to parse particular events from a `TcpStream` and sent a a broker task.
-enum Event {
+pub enum Event {
     NewClient {
         peer_id: Uuid,
         stream: Arc<TcpStream>,
