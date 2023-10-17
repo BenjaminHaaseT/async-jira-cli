@@ -21,120 +21,114 @@ use models::prelude::*;
 mod events;
 mod interface;
 
-enum Event {
-    NewClient {
-        peer_addr: String,
-        stream: Arc<TcpStream>,
-    },
-    AddEpic {
-        epic_name: String,
-        epic_description: String,
-    },
-    DeleteEpic {
-        epic_id: u32,
-    },
-    GetEpic {
-        epic_id: u32,
-    },
-    UpdateEpicStatus {
-        epic_id: u32,
-        status: Status,
-    },
-    GetStory {
-        epic_id: u32,
-        story_id: u32,
-    },
-    AddStory {
-        epic_id: u32,
-        story_name: String,
-        story_description: String,
-    },
-    DeleteStory {
-        epic_id: u32,
-        story_id: u32,
-    },
-    UpdateStoryStatus {
-        epic_id: u32,
-        story_id: u32,
-        status: Status,
-    },
-    ClientDisconnected
-}
+// enum Event {
+//     NewClient {
+//         peer_addr: String,
+//         stream: Arc<TcpStream>,
+//     },
+//     AddEpic {
+//         epic_name: String,
+//         epic_description: String,
+//     },
+//     DeleteEpic {
+//         epic_id: u32,
+//     },
+//     GetEpic {
+//         epic_id: u32,
+//     },
+//     UpdateEpicStatus {
+//         epic_id: u32,
+//         status: Status,
+//     },
+//     GetStory {
+//         epic_id: u32,
+//         story_id: u32,
+//     },
+//     AddStory {
+//         epic_id: u32,
+//         story_name: String,
+//         story_description: String,
+//     },
+//     DeleteStory {
+//         epic_id: u32,
+//         story_id: u32,
+//     },
+//     UpdateStoryStatus {
+//         epic_id: u32,
+//         story_id: u32,
+//         status: Status,
+//     },
+//     ClientDisconnected
+// }
 
-impl Event {
-    async fn try_from(tag: &[u8; 13], stream: &TcpStream) -> Result<Event, DbError> {
-        let event_byte = tag[0];
-        let mut stream = stream;
-        if event_byte & 1 != 0 {
-            let epic_name_len = parse_4_bytes(&tag[1..5]);
-            let epic_description_len = parse_4_bytes(&tag[5..9]);
-            let mut epic_name_bytes = vec![0u8; epic_name_len as usize];
-            let mut epic_description_bytes = vec![0u8; epic_description_len as usize];
-            stream.read_exact(&mut epic_name_bytes)
-                .await
-                .map_err(|_| DbError::ParseError(format!("unable to read epic name bytes from stream")))?;
-            stream.read_exact(&mut epic_description_bytes)
-                .await
-                .map_err(|_| DbError::ParseError(format!("unable to parse epic description bytes from stream")))?;
-            let epic_name = String::from_utf8(epic_name_bytes)
-                .map_err(|_| DbError::ParseError(format!("unable to parse epic name as well formed utf8")))?;
-            let epic_description = String::from_utf8(epic_description_bytes)
-                .map_err(|_| DbError::ParseError(format!("unable to parse epic description as well formed utf8")))?;
-            Ok(Event::AddEpic { epic_name, epic_description })
-        } else if event_byte & 2 != 0 {
-            let epic_id = parse_4_bytes(&tag[1..5]);
-            Ok(Event::DeleteEpic { epic_id })
-        } else if event_byte & 4 != 0 {
-            let epic_id = parse_4_bytes(&tag[1..5]);
-            Ok(Event::GetEpic { epic_id })
-        } else if event_byte & 8 != 0 {
-            let epic_id = parse_4_bytes(&tag[1..5]);
-            let epic_status = tag[5];
-            let status = Status::try_from(epic_status)?;
-            Ok(Event::UpdateEpicStatus { epic_id, status })
-        } else if event_byte & 16 != 0 {
-            let epic_id = parse_4_bytes(&tag[1..5]);
-            let story_id = parse_4_bytes(&tag[5..9]);
-            Ok(Event::GetStory { epic_id, story_id })
-        } else if event_byte & 32 != 0 {
-            let epic_id = parse_4_bytes(&tag[1..5]);
-            let story_name_len = parse_4_bytes(&tag[5..9]) as usize;
-            let story_description_len = parse_4_bytes(&tag[9..]) as usize;
-            let mut story_name_bytes = vec![0u8; story_name_len];
-            let mut story_description_bytes = vec![0u8; story_description_len];
-            stream.read_exact(&mut story_name_bytes)
-                .await
-                .map_err(|_| DbError::ParseError(format!("unable to read story name bytes from stream")))?;
-            stream.read_exact(&mut story_description_bytes)
-                .await
-                .map_err(|_| DbError::ParseError(format!("unable to ready story description bytes from stream")))?;
-            let story_name = String::from_utf8(story_name_bytes)
-                .map_err(|_| DbError::ParseError(format!("unable to read story name as well formed utf8")))?;
-            let story_description = String::from_utf8(story_description_bytes)
-                .map_err(|_| DbError::ParseError(format!("unable to read story description bytes as well formed utf8")))?;
-            Ok(Event::AddStory { epic_id, story_name, story_description })
-        } else if event_byte & 64 != 0 {
-            let epic_id = parse_4_bytes(&tag[1..5]);
-            let story_id = parse_4_bytes(&tag[5..9]);
-            Ok(Event::DeleteStory { epic_id, story_id })
-        } else if event_byte & 128 != 0 {
-            let epic_id = parse_4_bytes(&tag[1..5]);
-            let story_id = parse_4_bytes(&tag[5..9]);
-            let story_status = Status::try_from(tag[10])?;
-            Ok(Event::UpdateStoryStatus { epic_id, story_id, status: story_status })
-        } else {
-            Err(DbError::DoesNotExist(format!("unable to parse tag and stream")))
-        }
-    }
-}
+// impl Event {
+//     async fn try_from(tag: &[u8; 13], stream: &TcpStream) -> Result<Event, DbError> {
+//         let event_byte = tag[0];
+//         let mut stream = stream;
+//         if event_byte & 1 != 0 {
+//             let epic_name_len = parse_4_bytes(&tag[1..5]);
+//             let epic_description_len = parse_4_bytes(&tag[5..9]);
+//             let mut epic_name_bytes = vec![0u8; epic_name_len as usize];
+//             let mut epic_description_bytes = vec![0u8; epic_description_len as usize];
+//             stream.read_exact(&mut epic_name_bytes)
+//                 .await
+//                 .map_err(|_| DbError::ParseError(format!("unable to read epic name bytes from stream")))?;
+//             stream.read_exact(&mut epic_description_bytes)
+//                 .await
+//                 .map_err(|_| DbError::ParseError(format!("unable to parse epic description bytes from stream")))?;
+//             let epic_name = String::from_utf8(epic_name_bytes)
+//                 .map_err(|_| DbError::ParseError(format!("unable to parse epic name as well formed utf8")))?;
+//             let epic_description = String::from_utf8(epic_description_bytes)
+//                 .map_err(|_| DbError::ParseError(format!("unable to parse epic description as well formed utf8")))?;
+//             Ok(Event::AddEpic { epic_name, epic_description })
+//         } else if event_byte & 2 != 0 {
+//             let epic_id = parse_4_bytes(&tag[1..5]);
+//             Ok(Event::DeleteEpic { epic_id })
+//         } else if event_byte & 4 != 0 {
+//             let epic_id = parse_4_bytes(&tag[1..5]);
+//             Ok(Event::GetEpic { epic_id })
+//         } else if event_byte & 8 != 0 {
+//             let epic_id = parse_4_bytes(&tag[1..5]);
+//             let epic_status = tag[5];
+//             let status = Status::try_from(epic_status)?;
+//             Ok(Event::UpdateEpicStatus { epic_id, status })
+//         } else if event_byte & 16 != 0 {
+//             let epic_id = parse_4_bytes(&tag[1..5]);
+//             let story_id = parse_4_bytes(&tag[5..9]);
+//             Ok(Event::GetStory { epic_id, story_id })
+//         } else if event_byte & 32 != 0 {
+//             let epic_id = parse_4_bytes(&tag[1..5]);
+//             let story_name_len = parse_4_bytes(&tag[5..9]) as usize;
+//             let story_description_len = parse_4_bytes(&tag[9..]) as usize;
+//             let mut story_name_bytes = vec![0u8; story_name_len];
+//             let mut story_description_bytes = vec![0u8; story_description_len];
+//             stream.read_exact(&mut story_name_bytes)
+//                 .await
+//                 .map_err(|_| DbError::ParseError(format!("unable to read story name bytes from stream")))?;
+//             stream.read_exact(&mut story_description_bytes)
+//                 .await
+//                 .map_err(|_| DbError::ParseError(format!("unable to ready story description bytes from stream")))?;
+//             let story_name = String::from_utf8(story_name_bytes)
+//                 .map_err(|_| DbError::ParseError(format!("unable to read story name as well formed utf8")))?;
+//             let story_description = String::from_utf8(story_description_bytes)
+//                 .map_err(|_| DbError::ParseError(format!("unable to read story description bytes as well formed utf8")))?;
+//             Ok(Event::AddStory { epic_id, story_name, story_description })
+//         } else if event_byte & 64 != 0 {
+//             let epic_id = parse_4_bytes(&tag[1..5]);
+//             let story_id = parse_4_bytes(&tag[5..9]);
+//             Ok(Event::DeleteStory { epic_id, story_id })
+//         } else if event_byte & 128 != 0 {
+//             let epic_id = parse_4_bytes(&tag[1..5]);
+//             let story_id = parse_4_bytes(&tag[5..9]);
+//             let story_status = Status::try_from(tag[10])?;
+//             Ok(Event::UpdateStoryStatus { epic_id, story_id, status: story_status })
+//         } else {
+//             Err(DbError::DoesNotExist(format!("unable to parse tag and stream")))
+//         }
+//     }
+// }
 
-fn parse_4_bytes(bytes: &[u8]) -> u32 {
-    let mut res = 0;
-    for i in 0..4 {
-        res ^= (bytes[i] as u32) << (i * 8);
-    }
-    res
-}
+
 
 enum Response {
     ClientAlreadyExists,
