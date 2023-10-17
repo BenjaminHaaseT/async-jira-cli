@@ -187,6 +187,8 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Opt
                     .await
                     .map_err(|_| DbError::ConnectionError(format!("unable to send event to broker")))?;
             }
+            // TODO: handle the case when we are unable to parse clients event from the stream so the broker can send an appropriate response
+            // We were unable to parse a valid event from the clients stream,
             Err(_) => {
                 broker_sender
                     .send(None)
