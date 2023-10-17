@@ -233,7 +233,7 @@ async fn broker(
                     task::spawn(connection_write_loop(stream, client_receiver));
                 } else {
                     let mut client_sender = clients.get_mut(&peer_addr).unwrap();
-                    //TODO: handle errors with more specificity and log errors instead of sending them
+                    //TODO: handle errors with more specificity. Log the error in the case that we can't send a response to the client
                     client_sender.send(Response::ClientAlreadyExists)
                         .await
                         .map_err(|_| DbError::ConnectionError(String::from("unable to send client response")))?;
