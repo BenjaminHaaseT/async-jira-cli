@@ -150,7 +150,7 @@ async fn accept_loop(addrs: impl ToSocketAddrs + Debug + Clone, channel_buf_size
 
     // Get a channel to the broker, and spawn the brokers task
     let (broker_sender, broker_receiver) = mpsc::channel::<Option<Event>>(channel_buf_size);
-    task::spawn(broker(broker_receiver));
+    task::spawn(broker(broker_receiver, db_dir, db_file_name, epic_dir, channel_buf_size));
 
     while let Some(stream_res) = listener.incoming().next().await {
         let stream = stream_res.map_err(|_e| DbError::ConnectionError(format!("unable to accept stream")))?;
@@ -202,7 +202,7 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Opt
     broker_sender
         .send(Some(Event::ClientDisconnected))
         .await
-        .map_err((|_| DbError::ConnectionError(String::from("unable to send event to broker"))))?;
+        .map_err(|_| DbError::ConnectionError(String::from("unable to send event to broker")))?;
     Ok(())
 }
 

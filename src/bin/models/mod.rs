@@ -16,7 +16,11 @@ use std::error::Error;
 use std::io::{self, Seek, SeekFrom, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
 use std::convert::{TryFrom, Into, AsRef};
 use std::cmp::PartialEq;
-use async_std::{sync::RwLock};
+use async_std::{
+    sync::RwLock,
+    prelude::*,
+    task,
+};
 
 pub mod prelude {
     pub use super::*;
@@ -235,7 +239,7 @@ impl AsyncDbState {
         root_path.push(db_file_name.as_str());
 
         // Load file
-        let mut file = if let Ok(f) = OpenOptions::new().read(true).open(root_path.clone()) {
+        let mut file = if let Ok(f) = std::fs::OpenOptions::new().read(true).open(root_path.clone()) {
             BufReader::new(f)
         } else {
             return Err(DbError::FileLoadError(format!("unable to load file from {}, {}", db_dir.clone(), db_file_name.clone())));
@@ -269,10 +273,10 @@ impl AsyncDbState {
     ///
     /// The method is async, since it needs to lock each of the `Epics` behind the `RwLock`.
     pub async fn write(&self) -> Result<(), DbError> {
-        let mut writer = if let Ok(f) = OpenOptions::new().write(true).truncate(true).create(true).open(&self.file_path) {
-            BufWriter::new(f)
+        let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new().write(true).truncate(true).open(&self.file_path).await {
+            async_std::io::BufWriter::new(f)
         } else {
-            return Err(DbError::FileLoadError(format!("unable to open/create associated file: {:?}", self.file_path.to_str())))
+            return Err(DbError::FileLoadError(format!("unable to open or create associated file: {:?}", self.file_path.to_str())))
         };
 
         for (id, epic) in &self.epics {
@@ -280,10 +284,11 @@ impl AsyncDbState {
             let epic_file_path_string = format!("{}/{}/epic{id}.txt", &self.db_dir, &self.epic_dir);
             let line = format!("{},{}\n", id, epic_file_path_string).into_bytes();
             writer.write(line.as_slice())
+                .await
                 .map_err(
                     |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
             let mut epic_lock = epic.write().await;
-            epic_lock.write()?;
+            epic_lock.write_async().await?;
         }
 
         Ok(())
@@ -474,6 +479,47 @@ impl Epic {
 
         Ok(())
     }
+    /// An asynchronous version of `self.write()`.
+    pub async fn write_async(&self) -> Result<(), DbError> {
+        let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open::<&Path>(self.file_path.as_ref()).await {
+            async_std::io::BufWriter::new(f)
+        } else {
+            return Err(DbError::FileLoadError(format!("unable to open file: {:?}", self.file_path.to_str())))
+        };
+
+        // Encode the tag of `self` and write epic data to file
+        let epic_tag = self.encode();
+        writer.write_all(&epic_tag)
+            .await
+            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id)))?;
+        writer.write_all(self.name.as_bytes())
+            .await
+            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} name to file", self.id)))?;
+        writer.write_all(self.description.as_bytes())
+            .await
+            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} description to file", self.id)))?;
+
+        // Now write stories to file
+        for (story_id, story) in &self.stories {
+            let story_tag = story.encode();
+            writer.write_all(&story_tag)
+                .await
+                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} tag to file", *story_id)))?;
+            writer.write_all(story.name.as_bytes())
+                .await
+                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} name to file", story.name.as_str())))?;
+            writer.write_all(story.description.as_bytes())
+                .await
+                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} description to file", story.description.as_str())))?;
+        }
+
+        Ok(())
+    }
+
     /// Adds a new story to the `Epic`. Returns a `Result<(), DbError>`, the `Ok` variant if successful,
     /// and `Err` variant if unsuccessful.
     pub fn add_story(&mut self, story: Story) -> Result<(), DbError> {
