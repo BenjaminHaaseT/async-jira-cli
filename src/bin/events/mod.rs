@@ -13,50 +13,61 @@ pub mod prelude {
 
 /// A struct that is used to parse particular events from a `TcpStream` and sent a a broker task.
 pub enum Event {
+    /// Represents the event of a new client connecting
     NewClient {
         peer_id: Uuid,
         stream: Arc<TcpStream>,
     },
+    /// Represents a client request to add an `Epic`
     AddEpic {
         peer_id: Uuid,
         epic_name: String,
         epic_description: String,
     },
+    /// Represents a client request to delete an `Epic`
     DeleteEpic {
         peer_id: Uuid,
         epic_id: u32,
     },
+    /// Represents a client request to get an `Epics` data
     GetEpic {
         peer_id: Uuid,
         epic_id: u32,
     },
+    /// Represents a client request to update an `Epic`s status field
     UpdateEpicStatus {
         peer_id: Uuid,
         epic_id: u32,
         status: Status,
     },
+    /// Represents a client request to get a `Story's data
     GetStory {
         peer_id: Uuid,
         epic_id: u32,
         story_id: u32,
     },
+    /// Represents a client request to add a `Story`
     AddStory {
         peer_id: Uuid,
         epic_id: u32,
         story_name: String,
         story_description: String,
     },
+    /// Represents a client request to delete a `Story`
     DeleteStory {
         peer_id: Uuid,
         epic_id: u32,
         story_id: u32,
     },
+    /// Represents a client request to update a `Story` status
     UpdateStoryStatus {
         peer_id: Uuid,
         epic_id: u32,
         story_id: u32,
         status: Status,
     },
+    /// Signifies an unsuccessful parsing of an event that needs to be relayed back to the client
+    UnparseableEvent { peer_id: Uuid }
 }
 
 impl Event {

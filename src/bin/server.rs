@@ -133,6 +133,18 @@ mod interface;
 
 enum Response {
     ClientAlreadyExists,
+    AddedEpicOk(u32),
+    DeletedEpicOk(u32),
+    GetEpicOk(Vec<u8>),
+    EpicDoesNotExist(u32),
+
+}
+
+impl Response {
+    /// Method that will convert a `Response` into an encoded slice of bytes
+    fn as_bytes(&self) -> &[u8] {
+        todo!()
+    }
 }
 
 /// Accepts a `addrs` representing a socket address that will listen for incoming connections,
@@ -146,7 +158,7 @@ async fn accept_loop(addrs: impl ToSocketAddrs + Debug + Clone, channel_buf_size
     let listener = TcpListener::bind(addrs).await.map_err(|_e| DbError::ConnectionError(format!("could not connect to {:?}", addrs_clone)))?;
 
     // Get a channel to the broker, and spawn the brokers task
-    let (broker_sender, broker_receiver) = mpsc::channel::<Option<Event>>(channel_buf_size);
+    let (broker_sender, broker_receiver) = mpsc::channel::<Event>(channel_buf_size);
     task::spawn(broker(broker_receiver, db_dir, db_file_name, epic_dir, channel_buf_size));
 
     while let Some(stream_res) = listener.incoming().next().await {
@@ -163,7 +175,7 @@ async fn accept_loop(addrs: impl ToSocketAddrs + Debug + Clone, channel_buf_size
 /// to the broker task. If a new event is successfully read from the client stream it is sent to the broker via `broker_sender`,
 /// otherwise it sends `None`. The function can fail if there is an error parsing `client_stream.peer_addr()` as a string,
 /// a new `Event` is not able to be sent to the broker.
-async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Option<Event>>) -> Result<(), DbError> {
+async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Event>) -> Result<(), DbError> {
     let client_stream = Arc::new(client_stream);
     let mut client_stream_reader = &*client_stream;
 
@@ -172,48 +184,50 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Opt
 
     // Create a new client and send to broker
     let new_client = Event::NewClient { peer_id: client_id.clone(), stream: client_stream.clone() };
-    broker_sender.send(Some(new_client))
+    broker_sender.send(new_client)
         .await
         .map_err(|_| DbError::ConnectionError(format!("unable to send client to broker")))?;
 
     let mut tag = [0u8; 13];
 
     while let Ok(_) = client_stream_reader.read_exact(&mut tag).await {
-        // TODO: handle the case when input from user is not parse-able ie send a special error event to the broker to send back to the client.
         match Event::try_create(client_id.clone(), &tag, client_stream_reader).await {
             Ok(event) => {
                 broker_sender
-                    .send(Some(event))
+                    .send(event)
                     .await
                     .map_err(|_| DbError::ConnectionError(format!("unable to send event to broker")))?;
             }
-            // TODO: handle the case when we are unable to parse clients event from the stream so the broker can send an appropriate response
             // We were unable to parse a valid event from the clients stream,
             Err(_) => {
                 broker_sender
-                    .send(None)
+                    .send(Event::UnparseableEvent { peer_id: client_id.clone() })
                     .await
                     .map_err(|_| DbError::ConnectionError(format!("unable to send event to broker")))?;
             }
         }
     }
     // TODO: Handle event when client disconnects, need to set up a synchornization method
-    // broker_sender
-    //     .send(Some(Event::ClientDisconnected))
-    //     .await
-    //     .map_err(|_| DbError::ConnectionError(String::from("unable to send event to broker")))?;
     Ok(())
 }
 
-async fn connection_write_loop(stream: Arc<TcpStream>, client_receiver: Receiver<Response>) -> Result<(), DbError> {
-    todo!()
+/// Takes `stream` and `client_receiver` and writes all responses received from the broker task to
+/// `stream`.
+async fn connection_write_loop(stream: Arc<TcpStream>, mut client_receiver: Receiver<Response>) -> Result<(), DbError> {
+    let mut stream = &*stream;
+    while let Some(resp) = client_receiver.next().await {
+        stream.write_all(resp.as_bytes())
+            .await
+            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client")))?;
+    }
+    Ok(())
 }
 
 /// Takes a `Receiver<Option<Event>>` and implements the logic associated with each event.
 /// The `broker()` function starts a connection to the database, and holds client addresses in a `HashMap`.
 /// Whenever a response needs to be sent back to the client, a new write task will be generated.
 async fn broker(
-    mut receiver: Receiver<Option<Event>>,
+    mut receiver: Receiver<Event>,
     db_dir: String,
     db_file_name: String,
     epic_dir: String,
@@ -221,11 +235,11 @@ async fn broker(
 ) -> Result<(), DbError> {
     let mut db_handle = AsyncDbState::load(db_dir, db_file_name, epic_dir)?;
     let mut clients: HashMap<Uuid, Sender<Response>> = HashMap::new();
-
+    // TODO: log errors instead of breaking from the loop, except in the case of necessary panics
     while let Some(event) = receiver.next().await {
         // Process each event received
         match event {
-            Some(Event::NewClient { peer_id, stream }) => {
+            Event::NewClient { peer_id, stream } => {
                 if !clients.contains_key(&peer_id) {
                     let (client_sender, client_receiver) = mpsc::channel::<Response>(channel_buf_size);
                     clients.insert(peer_id, client_sender);
@@ -236,6 +250,47 @@ async fn broker(
                     client_sender.send(Response::ClientAlreadyExists)
                         .await
                         .map_err(|_| DbError::ConnectionError(String::from("unable to send client response")))?;
+                }
+            }
+            Event::AddEpic { peer_id, epic_name, epic_description } => {
+                let epic_id = db_handle.add_epic(epic_name, epic_description);
+                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                client_sender.send(Response::AddedEpicOk(epic_id))
+                    .await
+                    .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
+
+            }
+            Event::DeleteEpic { peer_id, epic_id} => {
+                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // Ensure epic_id is a valid epic
+                match db_handle.delete_epic(epic_id) {
+                    // We have successfully removed the epic
+                    Ok(_lock) => {
+                        client_sender.send(Response::DeletedEpicOk(epic_id))
+                            .await
+                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
+                    }
+                    // The epic does not exist, send reply back to client
+                    Err(_e) => {
+                        client_sender.send(Response::EpicDoesNotExist(epic_id))
+                            .await
+                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
+                    }
+                }
+            }
+            Event::GetEpic { peer_id, epic_id } => {
+                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                match db_handle.get_epic(epic_id) {
+                    Some(epic) => {
+                        let epic_bytes = epic.read().await.as_bytes();
+                        client_sender.send(Response::GetEpicOk(epic_bytes))
+                            .await
+                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
+                    }
+                    None => client_sender
+                        .send(Response::EpicDoesNotExist(epic_id))
+                        .await
+                        .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
                 }
             }
             _ => todo!()

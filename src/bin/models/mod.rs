@@ -547,7 +547,7 @@ impl Epic {
     }
 
     /// Method for updating a stories status. Returns `Result<(), DbError>`, the `Ok` variant if successful,
-    /// and `Err` variant if unsuccessfull.
+    /// and `Err` variant if unsuccessful.
     pub fn update_story_status(&mut self, story_id: u32, status: Status) -> Result<(), DbError> {
         if !self.stories.contains_key(&story_id) {
             Err(DbError::DoesNotExist(format!("unable to update story status for id: {}", story_id)))
@@ -555,6 +555,20 @@ impl Epic {
             self.stories.get_mut(&story_id).unwrap().status = status;
             Ok(())
         }
+    }
+
+    /// Method for getting a byte representation of the current state of `self`. Useful for writing to a tcp stream.
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        bytes.extend_from_slice(&self.encode());
+        bytes.extend_from_slice(self.name.as_bytes());
+        bytes.extend_from_slice(self.description.as_bytes());
+        for (_, story) in &self.stories {
+            bytes.extend_from_slice(&story.encode());
+            bytes.extend_from_slice(story.name.as_bytes());
+            bytes.extend_from_slice(story.description.as_bytes());
+        }
+        bytes
     }
 }
 
