@@ -6,6 +6,7 @@ use async_std::{
     prelude::*,
     task,
     net::{TcpListener, ToSocketAddrs, TcpStream},
+
 };
 
 use futures::channel::mpsc::{self, Receiver, Sender};
@@ -136,7 +137,11 @@ enum Response {
     AddedEpicOk(u32),
     DeletedEpicOk(u32),
     GetEpicOk(Vec<u8>),
+    EpicStatusUpdateOk(u32),
     EpicDoesNotExist(u32),
+    GetStoryOk(Vec<u8>),
+    StoryDoesNotExist(u32, u32),
+    StoryAddedOk(u32),
 
 }
 
@@ -145,6 +150,15 @@ impl Response {
     fn as_bytes(&self) -> &[u8] {
         todo!()
     }
+}
+
+/// Helper function that will take a future, spawn it as a new task and log any errors propagated from the spawned future.
+async fn spawn_and_log_errors(f: impl Future<Output = Result<(), DbError>> + Send + 'static) -> task::JoinHandle<()> {
+    task::spawn(async move {
+        if let Err(e) = f.await {
+            eprintln!("error: {}", e);
+        }
+    })
 }
 
 /// Accepts a `addrs` representing a socket address that will listen for incoming connections,
@@ -163,8 +177,7 @@ async fn accept_loop(addrs: impl ToSocketAddrs + Debug + Clone, channel_buf_size
 
     while let Some(stream_res) = listener.incoming().next().await {
         let stream = stream_res.map_err(|_e| DbError::ConnectionError(format!("unable to accept stream")))?;
-        // TODO: add error handling to log all errors
-        task::spawn(connection_loop(stream, broker_sender.clone()));
+        let _ = spawn_and_log_errors(connection_loop(stream, broker_sender.clone()));
     }
 
     Ok(())
@@ -186,7 +199,7 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Eve
     let new_client = Event::NewClient { peer_id: client_id.clone(), stream: client_stream.clone() };
     broker_sender.send(new_client)
         .await
-        .map_err(|_| DbError::ConnectionError(format!("unable to send client to broker")))?;
+        .unwrap();
 
     let mut tag = [0u8; 13];
 
@@ -196,14 +209,14 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Eve
                 broker_sender
                     .send(event)
                     .await
-                    .map_err(|_| DbError::ConnectionError(format!("unable to send event to broker")))?;
+                    .unwrap();
             }
             // We were unable to parse a valid event from the clients stream,
             Err(_) => {
                 broker_sender
                     .send(Event::UnparseableEvent { peer_id: client_id.clone() })
                     .await
-                    .map_err(|_| DbError::ConnectionError(format!("unable to send event to broker")))?;
+                    .unwrap();
             }
         }
     }
@@ -246,52 +259,134 @@ async fn broker(
                     task::spawn(connection_write_loop(stream, client_receiver));
                 } else {
                     let mut client_sender = clients.get_mut(&peer_id).unwrap();
-                    //TODO: handle errors with more specificity. Log the error in the case that we can't send a response to the client
-                    client_sender.send(Response::ClientAlreadyExists)
+                    //TODO: handle errors with more specificity
+                    if let Err(e) = client_sender.send(Response::ClientAlreadyExists)
                         .await
-                        .map_err(|_| DbError::ConnectionError(String::from("unable to send client response")))?;
+                        .map_err(|_| DbError::ConnectionError(String::from("unable to send client response"))) {
+                        eprintln!("error: {}", e);
+                    }
                 }
             }
             Event::AddEpic { peer_id, epic_name, epic_description } => {
                 let epic_id = db_handle.add_epic(epic_name, epic_description);
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                client_sender.send(Response::AddedEpicOk(epic_id))
+                if let Err(e) = client_sender.send(Response::AddedEpicOk(epic_id))
                     .await
-                    .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
+                    .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id))) {
+                    eprintln!("error: {}", e);
+                }
 
             }
             Event::DeleteEpic { peer_id, epic_id} => {
+                // TODO: ensure changes persist in database i.e write db_handle to file
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
                 // Ensure epic_id is a valid epic
                 match db_handle.delete_epic(epic_id) {
                     // We have successfully removed the epic
-                    Ok(_lock) => {
-                        client_sender.send(Response::DeletedEpicOk(epic_id))
+                    Ok(_epic) => {
+                        if let Err(e) = client_sender.send(Response::DeletedEpicOk(epic_id))
                             .await
-                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
+                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id))) {
+                            eprintln!("error: {}", e);
+                        }
                     }
                     // The epic does not exist, send reply back to client
                     Err(_e) => {
-                        client_sender.send(Response::EpicDoesNotExist(epic_id))
+                        if let Err(e) = client_sender.send(Response::EpicDoesNotExist(epic_id))
                             .await
-                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
+                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id))) {
+                            eprintln!("error: {}", e);
+                        }
                     }
                 }
             }
             Event::GetEpic { peer_id, epic_id } => {
+
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
                 match db_handle.get_epic(epic_id) {
                     Some(epic) => {
-                        let epic_bytes = epic.read().await.as_bytes();
-                        client_sender.send(Response::GetEpicOk(epic_bytes))
+                        let epic_bytes = epic.as_bytes();
+                        if let Err(e) = client_sender.send(Response::GetEpicOk(epic_bytes))
                             .await
-                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
+                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id))) {
+                            eprintln!("error: {}", e);
+                        }
                     }
-                    None => client_sender
-                        .send(Response::EpicDoesNotExist(epic_id))
-                        .await
-                        .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
+                    None => {
+                        if let Err(e) = client_sender
+                            .send(Response::EpicDoesNotExist(epic_id))
+                            .await
+                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id))) {
+                            eprintln!("error: {}", e);
+                        }
+                    }
                 }
+            }
+            Event::UpdateEpicStatus { peer_id, epic_id, status}  => {
+                // TODO: ensure changes persist in database i.e write db_handle to file
+                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                if let Some(epic) = db_handle.get_epic_mut(epic_id) {
+                    epic.update_status(status);
+                    // Send response that status was updated successfully
+                    if let Err(e) = client_sender.send(Response::EpicStatusUpdateOk(epic_id))
+                        .await
+                        .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id))) {
+                        eprintln!("error: {}", e);
+                    }
+                    // Send the updated epic
+                    if let Err(e) = client_sender.send(Response::GetEpicOk(epic.as_bytes()))
+                        .await
+                        .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id))) {
+                        eprintln!("error: {}", e);
+                    }
+                } else {
+                    if let Err(e) = client_sender.send(Response::EpicDoesNotExist(epic_id))
+                        .await
+                        .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id))) {
+                        eprintln!("error: {}", e);
+                    }
+                }
+            }
+            Event::GetStory { peer_id,epic_id, story_id} => {
+                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                if let Some(epic) = db_handle.get_epic(epic_id) {
+                    match epic.get_story(story_id) {
+                        Some(story) => {
+                            if let Err(_) = client_sender.send(Response::GetStoryOk(story.as_bytes())).await {
+                                eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                            }
+                        }
+                        None => {
+                            if let Err(_) = client_sender.send(Response::StoryDoesNotExist(epic_id, story_id)).await {
+                                eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                            }
+                        }
+                    }
+                } else {
+                    if let Err(_) = client_sender.send(Response::EpicDoesNotExist(epic_id)).await {
+                        eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                    }
+                }
+            }
+            Event::AddStory { peer_id, epic_id, story_name, story_description} => {
+                // TODO: ensure changes persist in database i.e write db_handle to file
+                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                match db_handle.add_story(epic_id, story_name, story_description).await {
+                    Ok(story_id) => {
+                        if let Err(_) = client_sender.send(Response::StoryAddedOk(story_id)).await {
+                            eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                        }
+                        if let Err(_) = client_sender.send(Response::GetEpicOk(db_handle.get_epic(epic_id).unwrap().as_bytes())).await {
+                            eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                        }
+                    }
+                    Err(e) => {
+                        if let Err(_) = client_sender.send(Response::EpicDoesNotExist(epic_id)).await {
+                            eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                        }
+                    }
+                }
+
             }
             _ => todo!()
         }

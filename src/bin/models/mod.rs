@@ -16,6 +16,7 @@ use std::error::Error;
 use std::io::{self, Seek, SeekFrom, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
 use std::convert::{TryFrom, Into, AsRef};
 use std::cmp::PartialEq;
+use std::fmt::Formatter;
 use async_std::{
     sync::RwLock,
     prelude::*,
@@ -194,7 +195,7 @@ impl DbState {
 #[derive(Debug)]
 pub struct AsyncDbState {
     /// Holds the mapping from epic id's to `Epic`s
-    epics: HashMap<u32, Arc<RwLock<Epic>>>,
+    epics: HashMap<u32, Epic>,
     /// A string representing the path to the database directory
     db_dir: String,
     /// A string representing the database file name e.g. db.txt
@@ -253,7 +254,7 @@ impl AsyncDbState {
             let line = line.map_err(|e| DbError::FileReadError(db_file_name.clone()))?;
             let (epic_id, epic_file_path) = AsyncDbState::parse_db_line(line)?;
             let epic = Epic::load(epic_file_path, &mut max_id)?;
-            epics.insert(epic_id, Arc::new(RwLock::new(epic)));
+            epics.insert(epic_id, epic);
 
         }
 
@@ -287,8 +288,7 @@ impl AsyncDbState {
                 .await
                 .map_err(
                     |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
-            let mut epic_lock = epic.write().await;
-            epic_lock.write_async().await?;
+            epic.write_async().await?;
         }
 
         Ok(())
@@ -302,26 +302,41 @@ impl AsyncDbState {
         let mut epic_pathname = PathBuf::from(&self.db_dir);
         epic_pathname.push(self.epic_dir.clone());
         epic_pathname.push(epic_fname);
-        self.epics.insert(id, Arc::new(RwLock::new(Epic::new(id, name, description, Status::Open, epic_pathname, HashMap::new()))));
+        self.epics.insert(id, Epic::new(id, name, description, Status::Open, epic_pathname, HashMap::new()));
         self.last_unique_id
     }
     /// Method to check if an `Epic` with `epic_id` contains in the `AsyncDbState`.
     pub fn contains_epic(&self, epic_id: u32) -> bool {
         self.epics.contains_key(&epic_id)
     }
-    /// Method to get an `Arc<RwLock<Epic>>>` from the `AsyncDbState`. Returns an `Option`,
+    /// Method to get an `&Epic` from the `AsyncDbState`. Returns an `Option`,
     /// The `Some` variant if the `Epic` is contained in the database otherwise the `None` variant.
-    pub fn get_epic(&self, epic_id: u32) -> Option<Arc<RwLock<Epic>>> {
-        match self.epics.get(&epic_id) {
-            Some(epic) => Some(Arc::clone(epic)),
-            None => None
-        }
+    pub fn get_epic(&self, epic_id: u32) -> Option<&Epic> {
+        self.epics.get(&epic_id)
+    }
+    /// Method to get a `&mut Epic` from the `self`. Returns an `Option`, the `Some variant if the
+    /// `Epic` is contained in the database otherwise the `None` variant.
+    pub fn get_epic_mut(&mut self, epic_id: u32) -> Option<&mut Epic> {
+        self.epics.get_mut(&epic_id)
     }
     /// Method to delete an `Epic` from the database, note this method only logically deletes the `Epic`,
     /// Since the `Epic`s are behind an `Arc` there may be other threads still reading or writing to the epic.
-    pub fn delete_epic(&mut self, epic_id: u32) -> Result<Arc<RwLock<Epic>>, DbError> {
+    pub fn delete_epic(&mut self, epic_id: u32) -> Result<Epic, DbError> {
         self.epics.remove(&epic_id)
             .ok_or(DbError::DoesNotExist(format!("unable to delete epic with id: {}, epic not contained in database", epic_id)))
+    }
+    /// Method to add a `Story` to an `Epic` contained in `self` with `epic_id`. The method can fail
+    ///  if there is no `Epic` contained in `self` with `epic_id`.
+    pub async fn add_story(&mut self, epic_id: u32, story_name: String, story_description: String) -> Result<u32, DbError> {
+        if let Some(epic) = self.epics.get_mut(&epic_id) {
+            self.last_unique_id += 1;
+            let new_story = Story::new(self.last_unique_id, story_name, story_description, Status::Open);
+            epic.add_story(new_story)?;
+            epic.write_async().await?;
+            Ok(self.last_unique_id)
+        } else {
+            Err(DbError::DoesNotExist(format!("epic with id: {} does not exist", epic_id)))
+        }
     }
 }
 
@@ -570,6 +585,11 @@ impl Epic {
         }
         bytes
     }
+    /// Returns an `Option<&Story>`. If `self` contains a story with id `story_id` then the `Some` variant is returned,
+    /// otherwise the `None` variant is returned.
+    pub fn get_story(&self, story_id: u32) -> Option<&Story> {
+        self.stories.get(&story_id)
+    }
 }
 
 unsafe impl Send for Epic {}
@@ -642,6 +662,14 @@ impl Story {
             description,
             status,
         }
+    }
+    /// Converts `self` into a representation in bytes. Useful for communicating via tcp.
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        bytes.extend_from_slice(&self.encode());
+        bytes.extend_from_slice(self.name.as_bytes());
+        bytes.extend_from_slice(self.description.as_bytes());
+        bytes
     }
 }
 
@@ -744,6 +772,20 @@ pub enum DbError {
     IdConflict(String),
     DoesNotExist(String),
     ConnectionError(String),
+}
+
+impl std::fmt::Display for DbError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DbError::FileLoadError(s) => write!(f, "{}", s),
+            DbError::FileReadError(s) => write!(f, "{}", s),
+            DbError::ParseError(s) => write!(f, "{}", s),
+            DbError::FileWriteError(s) => write!(f, "{}", s),
+            DbError::IdConflict(s) => write!(f, "{}", s),
+            DbError::DoesNotExist(s) => write!(f, "{}", s),
+            DbError::ConnectionError(s) => write!(f, "{}", s),
+        }
+    }
 }
 
 type DecodeTag = (u32, u32, u32, u8);
