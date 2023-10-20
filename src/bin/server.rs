@@ -1,6 +1,7 @@
 //! The binary that will run the server for the asynchronous database
 mod models;
 mod events;
+mod response;
 
 use async_std::{
     prelude::*,
@@ -21,65 +22,66 @@ use std::collections::HashMap;
 
 use models::prelude::*;
 use events::prelude::*;
+use response::prelude::*;
 mod interface;
 
-/// A response to an `Event` sent by a client.
-enum Response {
-    /// Response for a successful client connection, holds the database
-    /// `Epics` encoded in a `Vec<u8`
-    ClientAddedOk(Vec<u8>),
-
-    /// Response for an unsuccessful client connection
-    ClientAlreadyExists,
-
-    /// Response of a successful addition of an `Epic` to the database, holds the epic id
-    /// and the encoded database epic's in a `u32` and `Vec<u8>`
-    AddedEpicOk(u32, Vec<u8>),
-
-    /// Response for a successful deletion of an `Epic`, holds the epic id and the
-    /// encoded state of database as a `Vec<u8>`
-    DeletedEpicOk(u32, Vec<u8>),
-
-    /// Response for successful retrieval of an `Epic`, holds
-    /// the encoded data of the epic in a `Vec<u8>`
-    GetEpicOk(Vec<u8>),
-
-    /// Response for a successful status update for a particular `Epic`, holds the id of
-    /// the updated epic and its encoded data in `u32` and `Vec<u8>` respectively
-    EpicStatusUpdateOk(u32, Vec<u8>),
-
-    /// Response for an unsuccessful retrieval of an `Epic`, holds the id of the epic in a `u32`
-    EpicDoesNotExist(u32),
-
-    /// Response for a successful retrieval of a `Story`, holds the
-    /// encoded data of the story in a `Vec<u8>`
-    GetStoryOk(Vec<u8>),
-
-    /// Response for an unsuccessful retrieval of a `Story`, holds the epic id and story id
-    StoryDoesNotExist(u32, u32),
-
-    /// Response for a successful addition of a `Story`, holds the epic id,
-    /// story id and the epic encoded as (`u32`, `u32`, `Vec<u8>`)
-    AddedStoryOk(u32, u32, Vec<u8>),
-
-    /// Response for a successful deletion of a `Story`, holds the epic id,
-    /// story id and the epic encoded as (`u32`, `u32`, `Vec<u8>`)
-    DeletedStoryOk(u32, u32, Vec<u8>),
-
-    /// Response for successful update of `Story` status, holds the epic id the contains
-    /// the story, the story id and the epic encoded as (`u32`, `u32`, `Vec<u8>`)
-    StoryStatusUpdateOk(u32, u32, Vec<u8>),
-
-    /// Response for any event that was unable to be parsed correctly
-    RequestNotParsed
-}
-
-impl Response {
-    /// Method that will convert a `Response` into an encoded slice of bytes
-    fn as_bytes(&self) -> &[u8] {
-        todo!()
-    }
-}
+// /// A response to an `Event` sent by a client.
+// enum Response {
+//     /// Response for a successful client connection, holds the database
+//     /// `Epics` encoded in a `Vec<u8`
+//     ClientAddedOk(Vec<u8>),
+//
+//     /// Response for an unsuccessful client connection
+//     ClientAlreadyExists,
+//
+//     /// Response of a successful addition of an `Epic` to the database, holds the epic id
+//     /// and the encoded database epic's in a `u32` and `Vec<u8>`
+//     AddedEpicOk(u32, Vec<u8>),
+//
+//     /// Response for a successful deletion of an `Epic`, holds the epic id and the
+//     /// encoded state of database as a `Vec<u8>`
+//     DeletedEpicOk(u32, Vec<u8>),
+//
+//     /// Response for successful retrieval of an `Epic`, holds
+//     /// the encoded data of the epic in a `Vec<u8>`
+//     GetEpicOk(Vec<u8>),
+//
+//     /// Response for a successful status update for a particular `Epic`, holds the id of
+//     /// the updated epic and its encoded data in `u32` and `Vec<u8>` respectively
+//     EpicStatusUpdateOk(u32, Vec<u8>),
+//
+//     /// Response for an unsuccessful retrieval of an `Epic`, holds the id of the epic in a `u32`
+//     EpicDoesNotExist(u32),
+//
+//     /// Response for a successful retrieval of a `Story`, holds the
+//     /// encoded data of the story in a `Vec<u8>`
+//     GetStoryOk(Vec<u8>),
+//
+//     /// Response for an unsuccessful retrieval of a `Story`, holds the epic id and story id
+//     StoryDoesNotExist(u32, u32),
+//
+//     /// Response for a successful addition of a `Story`, holds the epic id,
+//     /// story id and the epic encoded as (`u32`, `u32`, `Vec<u8>`)
+//     AddedStoryOk(u32, u32, Vec<u8>),
+//
+//     /// Response for a successful deletion of a `Story`, holds the epic id,
+//     /// story id and the epic encoded as (`u32`, `u32`, `Vec<u8>`)
+//     DeletedStoryOk(u32, u32, Vec<u8>),
+//
+//     /// Response for successful update of `Story` status, holds the epic id the contains
+//     /// the story, the story id and the epic encoded as (`u32`, `u32`, `Vec<u8>`)
+//     StoryStatusUpdateOk(u32, u32, Vec<u8>),
+//
+//     /// Response for any event that was unable to be parsed correctly
+//     RequestNotParsed
+// }
+//
+// impl Response {
+//     /// Method that will convert a `Response` into an encoded slice of bytes
+//     fn as_bytes(&self) -> &[u8] {
+//         todo!()
+//     }
+// }
 
 /// Helper function that will take a future, spawn it as a new task and log any errors propagated from the spawned future.
 async fn spawn_and_log_errors(f: impl Future<Output = Result<(), DbError>> + Send + 'static) -> task::JoinHandle<()> {

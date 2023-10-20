@@ -582,7 +582,7 @@ impl Epic {
             return Err(DbError::DoesNotExist(format!("no story with id: {} present", story_id)));
         } else {
             self.stories.remove(&story_id);
-            Ok(())
+            Ok(story_id)
         }
     }
 
@@ -826,7 +826,7 @@ impl TagEncoding for EncodeTag {}
 /// Marker trait for types that represent tag encodings
 pub trait TagEncoding {}
 
-/// Marker trait for types that represent tag decodings
+/// Marker trait for types that represent tag decoding
 pub trait TagDecoding {}
 
 /// Provides an interface to types that can be serialized and deserialized as a stream of bytes
