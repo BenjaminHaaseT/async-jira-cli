@@ -209,6 +209,7 @@ pub struct AsyncDbState {
 }
 
 impl AsyncDbState {
+
     /// Associated method for creating a new `AsyncDbState`.
     pub fn new(db_dir: String, db_file_name: String, epic_dir: String) -> AsyncDbState {
         let mut file_path = PathBuf::from(db_dir.as_str());
@@ -222,6 +223,7 @@ impl AsyncDbState {
             last_unique_id: 0,
         }
     }
+
     /// Associated helper function. Handles reading a line of text from the db file.
     fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
         let (id_str, path_str) = match line.find(',') {
@@ -233,6 +235,7 @@ impl AsyncDbState {
         let path = PathBuf::from(path_str);
         Ok((id, path))
     }
+
     /// Associated method for loading a `AsyncDbState` from `db_dir`, `db_file_name` and `epic_dir`.
     pub fn load(db_dir: String, db_file_name: String, epic_dir: String) -> Result<AsyncDbState, DbError> {
         // Create file path
@@ -267,6 +270,7 @@ impl AsyncDbState {
             last_unique_id: max_id,
         })
     }
+
     /// Method for writing the contents of the `AsyncDbState` to its associated file. Will create a new
     /// file if an associated db file has not been created, otherwise it will overwrite the
     /// contents of the associated file.  Returns a `Result<(), DbError>`
@@ -293,6 +297,7 @@ impl AsyncDbState {
 
         Ok(())
     }
+
     /// Method to create a new `Epic` and add it to the `AsyncDbState`. Returns a `Result<(), DbError>,
     /// The `Ok` variant if the `Epic` was added successfully, otherwise it returns the `Err` variant.
     pub fn add_epic(&mut self, name: String, description: String) -> u32 {
@@ -305,26 +310,31 @@ impl AsyncDbState {
         self.epics.insert(id, Epic::new(id, name, description, Status::Open, epic_pathname, HashMap::new()));
         self.last_unique_id
     }
+
     /// Method to check if an `Epic` with `epic_id` contains in the `AsyncDbState`.
     pub fn contains_epic(&self, epic_id: u32) -> bool {
         self.epics.contains_key(&epic_id)
     }
+
     /// Method to get an `&Epic` from the `AsyncDbState`. Returns an `Option`,
     /// The `Some` variant if the `Epic` is contained in the database otherwise the `None` variant.
     pub fn get_epic(&self, epic_id: u32) -> Option<&Epic> {
         self.epics.get(&epic_id)
     }
+
     /// Method to get a `&mut Epic` from the `self`. Returns an `Option`, the `Some variant if the
     /// `Epic` is contained in the database otherwise the `None` variant.
     pub fn get_epic_mut(&mut self, epic_id: u32) -> Option<&mut Epic> {
         self.epics.get_mut(&epic_id)
     }
+
     /// Method to delete an `Epic` from the database, note this method only logically deletes the `Epic`,
     /// Since the `Epic`s are behind an `Arc` there may be other threads still reading or writing to the epic.
     pub fn delete_epic(&mut self, epic_id: u32) -> Result<Epic, DbError> {
         self.epics.remove(&epic_id)
             .ok_or(DbError::DoesNotExist(format!("unable to delete epic with id: {}, epic not contained in database", epic_id)))
     }
+
     /// Method to add a `Story` to an `Epic` contained in `self` with `epic_id`. The method can fail
     ///  if there is no `Epic` contained in `self` with `epic_id`.
     pub async fn add_story(&mut self, epic_id: u32, story_name: String, story_description: String) -> Result<u32, DbError> {
@@ -338,6 +348,17 @@ impl AsyncDbState {
             Err(DbError::DoesNotExist(format!("epic with id: {} does not exist", epic_id)))
         }
     }
+
+    /// Returns a `Vec<u8>` of all the `Epics` currently in `self.epics`.
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        for (_epic_id, epic) in &self.epics {
+            bytes.extend_from_slice(&epic.encode());
+            bytes.extend_from_slice(epic.name.as_bytes());
+            bytes.extend_from_slice(epic.description.as_bytes());
+        }
+        bytes
+    }
 }
 
 /// A struct that encapsulates all pertinent information and behaviors for a single epic.
@@ -349,9 +370,9 @@ pub struct Epic {
     name: String,
     /// The description of the epic
     description: String,
-    /// Holds the current status of the Epic
+    /// The current status of the Epic
     status: Status,
-    /// Holds the file path the current epic is located in
+    /// The file path the current epic is located in
     file_path: PathBuf,
     /// The mapping from unique story id's to the stories contained in the particular `Epic`
     stories: HashMap<u32, Story>
@@ -369,6 +390,7 @@ impl Epic {
             stories,
         }
     }
+
     /// Associated method for loading a `Epic` from `path`. The method is fallible, and so a `Result<Epic, DbError>` is returned,
     /// where the `Err` variant is the unsuccessful `load`.
     pub fn load(path: PathBuf, max_id: &mut u32) -> Result<Epic, DbError> {
@@ -462,6 +484,7 @@ impl Epic {
         *max_id = u32::max(id, *max_id);
         Ok(epic)
     }
+
     /// Writes the `Epic` to the file it is associated with, creates a new file if an associated
     /// file does not exist.
     pub fn write(&self) -> Result<(), DbError> {
@@ -494,6 +517,7 @@ impl Epic {
 
         Ok(())
     }
+
     /// An asynchronous version of `self.write()`.
     pub async fn write_async(&self) -> Result<(), DbError> {
         let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new()
@@ -545,6 +569,7 @@ impl Epic {
             Ok(())
         }
     }
+
     /// Updates the status of `Epic`.
     pub fn update_status(&mut self, status: Status) {
         self.status = status;
@@ -552,7 +577,7 @@ impl Epic {
 
     /// Deletes a story from the `Epic`. Returns a `Result<(), DbError>`, the `Ok` variant if successful,
     /// and `Err` variant if unsuccessful.
-    pub fn delete_story(&mut self, story_id: u32) -> Result<(), DbError> {
+    pub fn delete_story(&mut self, story_id: u32) -> Result<u32, DbError> {
         if !self.stories.contains_key(&story_id) {
             return Err(DbError::DoesNotExist(format!("no story with id: {} present", story_id)));
         } else {
@@ -585,6 +610,7 @@ impl Epic {
         }
         bytes
     }
+
     /// Returns an `Option<&Story>`. If `self` contains a story with id `story_id` then the `Some` variant is returned,
     /// otherwise the `None` variant is returned.
     pub fn get_story(&self, story_id: u32) -> Option<&Story> {
