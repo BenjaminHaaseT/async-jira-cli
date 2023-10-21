@@ -39,7 +39,8 @@ pub enum Response {
     /// encoded data of the story in a `Vec<u8>`
     GetStoryOk(Vec<u8>),
 
-    /// Response for an unsuccessful retrieval of a `Story`, holds the epic id and story id
+    /// Response for an unsuccessful retrieval of a `Story`, holds the epic id and story id and the
+    /// `Epic` encoded as a `Vec<u8>` that was queried
     StoryDoesNotExist(u32, u32, Vec<u8>),
 
     /// Response for a successful addition of a `Story`, holds the epic id,
@@ -59,9 +60,26 @@ pub enum Response {
 }
 
 impl Response {
-    /// Method that will convert a `Response` into an encoded slice of bytes
-    pub fn as_bytes(&self) -> &[u8] {
-        todo!()
+    /// Method that will convert a `Response` into an encoded vector of bytes.
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        bytes.extend_from_slice(&self.encode());
+        match self {
+            Response::ClientAddedOk(data) => bytes.extend_from_slice(data.as_slice()),
+            Response::ClientAlreadyExists => {},
+            Response::AddedEpicOk(_, data) => bytes.extend_from_slice(data.as_slice()),
+            Response::DeletedEpicOk(_, data) => bytes.extend_from_slice(data.as_slice()),
+            Response::GetEpicOk(data) => bytes.extend_from_slice(data.as_slice()),
+            Response::EpicStatusUpdateOk(_, data) => bytes.extend_from_slice(data.as_slice()),
+            Response::EpicDoesNotExist(_, data) => bytes.extend_from_slice(data.as_slice()),
+            Response::GetStoryOk(data) => bytes.extend_from_slice(data.as_slice()),
+            Response::StoryDoesNotExist(_, _, data) => bytes.extend_from_slice(data.as_slice()),
+            Response::AddedStoryOk(_, _, data) => bytes.extend_from_slice(data.as_slice()),
+            Response::DeletedStoryOk(_, _, data) => bytes.extend_from_slice(data.as_slice()),
+            Response::StoryStatusUpdateOk(_, _, data) => bytes.extend_from_slice(data.as_slice()),
+            Response::RequestNotParsed => {}
+        }
+        bytes
     }
 }
 
