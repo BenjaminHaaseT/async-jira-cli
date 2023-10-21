@@ -205,7 +205,7 @@ impl BytesEncode for Response {
         let mut type_and_flag_bytes = 0u16;
         let mut epic_id = 0u32;
         let mut story_id = 0u32;
-        type_and_flag_bytes ^= (tag[0] << 8) as u16;
+        type_and_flag_bytes ^= (tag[0] as u16) << 8;
         type_and_flag_bytes ^= tag[1] as u16;
         if type_and_flag_bytes & (1 << 2) != 0 || type_and_flag_bytes & (1 << 3) != 0
             || type_and_flag_bytes & (1 << 5) != 0 || type_and_flag_bytes & (1 << 6) != 0
@@ -222,5 +222,41 @@ impl BytesEncode for Response {
             }
         }
         (type_and_flag_bytes, epic_id, story_id)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_response_encode() {
+        let response = Response::ClientAddedOk(vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [128, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        let response = Response::ClientAlreadyExists;
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [0, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        let response = Response::AddedEpicOk(2353, vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [128, 4, 49, 9, 0, 0, 0, 0, 0, 0]);
+
+        let response = Response::DeletedEpicOk(2353, vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [128, 8, 49, 9, 0, 0, 0, 0, 0, 0]);
+
+        let response = Response::GetEpicOk(vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0])
+
+        //TODO: finish the rest of the encodings
+
     }
 }
