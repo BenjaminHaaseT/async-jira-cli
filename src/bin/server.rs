@@ -2,6 +2,8 @@
 mod models;
 mod events;
 mod response;
+mod utils;
+
 
 use async_std::{
     prelude::*,

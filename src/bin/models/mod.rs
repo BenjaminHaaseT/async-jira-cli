@@ -18,9 +18,7 @@ use std::convert::{TryFrom, Into, AsRef};
 use std::cmp::PartialEq;
 use std::fmt::Formatter;
 use async_std::{
-    sync::RwLock,
     prelude::*,
-    task,
 };
 
 pub mod prelude {
@@ -209,7 +207,6 @@ pub struct AsyncDbState {
 }
 
 impl AsyncDbState {
-
     /// Associated method for creating a new `AsyncDbState`.
     pub fn new(db_dir: String, db_file_name: String, epic_dir: String) -> AsyncDbState {
         let mut file_path = PathBuf::from(db_dir.as_str());

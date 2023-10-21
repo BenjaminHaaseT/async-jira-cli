@@ -1,5 +1,6 @@
 //! Collection of Structs and functions for responses sent from the server to the client
 use crate::models::{BytesEncode, TagDecoding, TagEncoding};
+use crate::utils::parse_4_bytes;
 
 pub mod prelude {
     pub use super::*;
@@ -30,15 +31,16 @@ pub enum Response {
     /// the updated epic and its encoded data in `u32` and `Vec<u8>` respectively
     EpicStatusUpdateOk(u32, Vec<u8>),
 
-    /// Response for an unsuccessful retrieval of an `Epic`, holds the id of the epic in a `u32`
-    EpicDoesNotExist(u32),
+    /// Response for an unsuccessful retrieval of an `Epic`, holds the id of the epic in a `u32` and
+    /// the database encoded as a `Vec<u8>`
+    EpicDoesNotExist(u32, Vec<u8>),
 
     /// Response for a successful retrieval of a `Story`, holds the
     /// encoded data of the story in a `Vec<u8>`
     GetStoryOk(Vec<u8>),
 
     /// Response for an unsuccessful retrieval of a `Story`, holds the epic id and story id
-    StoryDoesNotExist(u32, u32),
+    StoryDoesNotExist(u32, u32, Vec<u8>),
 
     /// Response for a successful addition of a `Story`, holds the epic id,
     /// story id and the epic encoded as (`u32`, `u32`, `Vec<u8>`)
@@ -80,7 +82,7 @@ impl BytesEncode for Response {
         let mut bytes = [0u8; 10];
         match self {
             Response::ClientAddedOk(_data) => {
-                bytes[0] ^= (1 << 8);
+                bytes[0] ^= (1 << 7);
                 bytes[1] ^= 1;
                 bytes
             }
@@ -89,7 +91,7 @@ impl BytesEncode for Response {
                 bytes
             }
             Response::AddedEpicOk(epic_id,_data) => {
-                bytes[0] ^= (1 << 8);
+                bytes[0] ^= (1 << 7);
                 bytes[1] ^= (1 << 2);
                 for i in 2..6u32 {
                     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
@@ -97,7 +99,7 @@ impl BytesEncode for Response {
                 bytes
             }
             Response::DeletedEpicOk(epic_id, _data) => {
-                bytes[0] ^= (1 << 8);
+                bytes[0] ^= (1 << 7);
                 bytes[1] ^= (1 << 3);
                 for i in 2..6u32 {
                     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) &0xff) as u8;
@@ -105,26 +107,102 @@ impl BytesEncode for Response {
                 bytes
             }
             Response::GetEpicOk(_data) => {
-                bytes[0] ^= (1 << 8);
+                bytes[0] ^= (1 << 7);
                 bytes[1] ^= (1 << 4);
                 bytes
             }
             Response::EpicStatusUpdateOk(epic_id, _data) => {
-                bytes[0] ^= (1 << 8);
+                bytes[0] ^= (1 << 7);
                 bytes[1] ^= (1 << 5);
                 for i in 2..6u32 {
                     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
                 }
                 bytes
             }
-            Response::EpicDoesNotExist(epic_id) => {
+            Response::EpicDoesNotExist(epic_id, _data) => {
+                bytes[0] ^= (1 << 7);
                 bytes[1] ^= (1 << 6);
                 for i in 2..6u32 {
                     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
                 }
                 bytes
             }
-            _ => todo!()
+            Response::GetStoryOk(_data) => {
+                bytes[0] ^= (1 << 7);
+                bytes[1] ^= (1 << 7);
+                bytes
+            }
+            Response::StoryDoesNotExist(epic_id, story_id,_data) => {
+                bytes[0] ^= (1 << 7);
+                bytes[0] ^= 1;
+                for i in 2..6u32 {
+                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                }
+                for i in 6..10u32 {
+                    bytes[i as usize] ^= (((*story_id) >> (8 * (i - 2))) & 0xff) as u8;
+                }
+                bytes
+            }
+            Response::AddedStoryOk(epic_id, story_id, _data) => {
+                bytes[0] ^= (1 << 7);
+                bytes[0] ^= (1 << 1);
+                for i in 2..6u32 {
+                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                }
+                for i in 6..10u32 {
+                    bytes[i as usize] ^= (((*story_id) >> (8 * (i - 2))) & 0xff) as u8;
+                }
+                bytes
+            }
+            Response::DeletedStoryOk(epic_id, story_id, _data) => {
+                bytes[0] ^= (1 << 7);
+                bytes[0] ^= (1 << 2);
+                for i in 2..6u32 {
+                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                }
+                for i in 6..10u32 {
+                    bytes[i as usize] ^= (((*story_id) >> (8 * (i - 2))) & 0xff) as u8;
+                }
+                bytes
+            }
+            Response::StoryStatusUpdateOk(epic_id, story_id, _data) => {
+                bytes[0] ^= (1 << 7);
+                bytes[0] ^= (1 << 3);
+                for i in 2..6u32 {
+                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                }
+                for i in 6..10u32 {
+                    bytes[i as usize] ^= (((*story_id) >> (8 * (i - 2))) & 0xff) as u8;
+                }
+                bytes
+            }
+            Response::RequestNotParsed => {
+                bytes[0] ^= (1 << 4);
+                bytes
+            }
         }
+    }
+
+    fn decode(tag: Self::Tag) -> Self::DecodedTag {
+        let mut type_and_flag_bytes = 0u16;
+        let mut epic_id = 0u32;
+        let mut story_id = 0u32;
+        type_and_flag_bytes ^= (tag[0] << 8) as u16;
+        type_and_flag_bytes ^= tag[1] as u16;
+        if type_and_flag_bytes & (1 << 2) != 0 || type_and_flag_bytes & (1 << 3) != 0
+            || type_and_flag_bytes & (1 << 5) != 0 || type_and_flag_bytes & (1 << 6) != 0
+            || type_and_flag_bytes & (1 << 8) != 0 || type_and_flag_bytes & (1 << 9) != 0
+            || type_and_flag_bytes & (1 << 10) != 0 || type_and_flag_bytes & (1 << 10) != 0
+            || type_and_flag_bytes & (1 << 11) != 0
+
+        {
+            epic_id = parse_4_bytes(&tag[2..6]);
+            if type_and_flag_bytes & (1 << 8) != 0 || type_and_flag_bytes & (1 << 9) != 0
+                || type_and_flag_bytes & (1 << 10) != 0 || type_and_flag_bytes & (1 << 11) != 0
+            {
+                story_id = parse_4_bytes(&tag[6..]);
+            }
+        }
+        (type_and_flag_bytes, epic_id, story_id)
     }
 }
