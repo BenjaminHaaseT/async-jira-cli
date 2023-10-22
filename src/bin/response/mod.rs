@@ -290,15 +290,119 @@ mod test {
         println!("{:?}", encoding);
         assert_eq!(encoding, [136, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
 
-        let response = Response::DeletedStoryOk(2353, 4798, vec![]);
-        let encoding = response.encode();
-        println!("{:?}", encoding);
-        assert_eq!(encoding, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
-
         let response = Response::RequestNotParsed;
         let encoding = response.encode();
         println!("{:?}", encoding);
         assert_eq!(encoding, [16, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
 
+    #[test]
+    fn test_response_decode() {
+        let response = Response::ClientAddedOk(vec![]);
+        let encoding = response.encode();
+        assert_eq!(encoding, [128, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (32769, 0, 0));
+        println!("{:016b}", decoding.0);
+
+        let response = Response::ClientAlreadyExists;
+        let encoding = response.encode();
+        assert_eq!(encoding, [0, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (2, 0, 0));
+        println!("{:016b}", decoding.0);
+
+
+        let response = Response::AddedEpicOk(2353, vec![]);
+        let encoding = response.encode();
+        assert_eq!(encoding, [128, 4, 49, 9, 0, 0, 0, 0, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (32772, 2353, 0));
+        println!("{:016b}", decoding.0);
+
+        let response = Response::DeletedEpicOk(2353, vec![]);
+        let encoding = response.encode();
+        assert_eq!(encoding, [128, 8, 49, 9, 0, 0, 0, 0, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (32776, 2353, 0));
+        println!("{:016b}", decoding.0);
+
+        let response = Response::GetEpicOk(vec![]);
+        let encoding = response.encode();
+        assert_eq!(encoding, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (32784, 0, 0));
+        println!("{:016b}", decoding.0);
+
+        let response = Response::EpicStatusUpdateOk(2353, vec![]);
+        let encoding = response.encode();
+        assert_eq!(encoding, [128, 32, 49, 9, 0, 0, 0, 0, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (32800, 2353, 0));
+        println!("{:016b}", decoding.0);
+
+        let response = Response::EpicDoesNotExist(2353, vec![]);
+        let encoding = response.encode();
+        assert_eq!(encoding, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (32832, 2353, 0));
+        println!("{:016b}", decoding.0);
+
+        let response = Response::GetStoryOk(vec![]);
+        let encoding = response.encode();
+        assert_eq!(encoding, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (32896, 0, 0));
+        println!("{:016b}", decoding.0);
+
+        let response = Response::StoryDoesNotExist(2353, 4798, vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [129, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (33024, 2353, 4798));
+        println!("{:016b}", decoding.0);
+
+        let response = Response::AddedStoryOk(2353, 4798, vec![]);
+        let encoding = response.encode();
+        assert_eq!(encoding, [130, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (33280, 2353, 4798));
+        println!("{:016b}", decoding.0);
+
+        let response = Response::DeletedStoryOk(2353, 4798, vec![]);
+        let encoding = response.encode();
+        assert_eq!(encoding, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (33792, 2353, 4798));
+        println!("{:016b}", decoding.0);
+
+        let response = Response::StoryStatusUpdateOk(2353, 4798, vec![]);
+        let encoding = response.encode();
+        assert_eq!(encoding, [136, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (34816, 2353, 4798));
+        println!("{:016b}", decoding.0);
+
+
+        let response = Response::RequestNotParsed;
+        let encoding = response.encode();
+        assert_eq!(encoding, [16, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let decoding = Response::decode(encoding);
+        println!("{:?}", decoding);
+        assert_eq!(decoding, (4096, 0, 0));
+        println!("{:016b}", decoding.0);
     }
 }
