@@ -1144,11 +1144,13 @@ mod test {
 
         println!("{:?}", db_state);
 
-        assert!(db_state.contains_epic(4));
+        let cur_max_id = db_state.last_unique_id;
 
-        assert!(db_state.delete_epic(4).is_ok());
+        assert!(db_state.contains_epic(cur_max_id));
 
-        assert!(db_state.delete_epic(17).is_err());
+        assert!(db_state.delete_epic(cur_max_id).is_ok());
+
+        assert!(db_state.delete_epic(cur_max_id).is_err());
 
         assert!(db_state.write().is_ok());
 
@@ -1160,7 +1162,7 @@ mod test {
 
         println!("{:?}", db_state);
 
-        assert!(!db_state.contains_epic(4));
+        assert!(!db_state.contains_epic(cur_max_id));
     }
 
     #[test]
@@ -1200,5 +1202,94 @@ mod test {
         assert!(db_state.delete_story(cur_id, cur_story_id).is_ok());
 
         assert!(db_state.delete_story(cur_id, cur_story_id).is_err());
+    }
+
+    #[test]
+    fn test_story_as_bytes() {
+        let story = Story::new(
+            1,
+            "S1".to_string(),
+            "TS1".to_string(),
+            Status::Open
+        );
+
+        let encoding = story.encode();
+        println!("{:?}", encoding);
+
+        let bytes = story.as_bytes();
+        println!("{:?}", bytes);
+
+        assert_eq!(bytes, vec![1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 83, 49, 84, 83, 49]);
+    }
+
+    #[test]
+    fn test_epic_as_bytes() {
+        let mut epic = Epic::new(129, "E129".to_string(), "TE129".to_string(), Status::Open, PathBuf::new(), HashMap::new());
+
+        let encoding = epic.encode();
+        println!("{:?}", encoding);
+
+        let bytes = epic.as_bytes();
+        println!("{:?}", bytes);
+
+        assert_eq!(bytes, vec![129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57]);
+
+        let story = Story::new(
+            1,
+            "S1".to_string(),
+            "TS1".to_string(),
+            Status::Open
+        );
+
+        let _ = epic.add_story(story);
+
+        let bytes = epic.as_bytes();
+
+        println!("{:?}", bytes);
+
+        assert_eq!(bytes, vec![129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 83, 49, 84, 83, 49]);
+    }
+
+    #[test]
+    fn test_async_db_state_as_bytes() {
+        let mut db_state = AsyncDbState::new("".to_string(), "".to_string(), "".to_string());
+        let mut epic = Epic::new(
+            129,
+            "E129".to_string(),
+            "TE129".to_string(),
+            Status::Open,
+            PathBuf::new(),
+            HashMap::new()
+        );
+
+        let epic_bytes = epic.as_bytes();
+        db_state.epics.insert(epic.id, epic);
+
+        let bytes = db_state.as_bytes();
+
+        println!("{:?}", bytes);
+
+        assert_eq!(bytes, vec![129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57]);
+        println!("{}", bytes.starts_with(epic_bytes.as_slice()));
+
+        let new_epic =  Epic::new(
+            130,
+            "E130".to_string(),
+            "TE130".to_string(),
+            Status::Open,
+            PathBuf::new(),
+            HashMap::new()
+        );
+
+        let new_epic_bytes = new_epic.as_bytes();
+        db_state.epics.insert(new_epic.id, new_epic);
+
+        let bytes = db_state.as_bytes();
+
+        println!("{:?}", bytes);
+
+        assert!(bytes.starts_with(epic_bytes.as_slice()) || bytes.ends_with(epic_bytes.as_slice()));
+        assert!(bytes.starts_with(new_epic_bytes.as_slice()) || bytes.ends_with(new_epic_bytes.as_slice()));
+
     }
 }

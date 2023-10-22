@@ -1,5 +1,3 @@
-6,/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics/epic6.txt
-3,/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics/epic3.txt
-5,/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics/epic5.txt
 2,/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics/epic2.txt
+3,/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics/epic3.txt
 1,/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics/epic1.txt

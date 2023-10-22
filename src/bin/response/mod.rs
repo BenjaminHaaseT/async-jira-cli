@@ -405,4 +405,9 @@ mod test {
         assert_eq!(decoding, (4096, 0, 0));
         println!("{:016b}", decoding.0);
     }
+
+    #[test]
+    fn test_response_as_bytes() {
+        todo!()
+    }
 }
