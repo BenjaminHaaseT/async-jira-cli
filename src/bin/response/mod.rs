@@ -157,7 +157,7 @@ impl BytesEncode for Response {
                     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
                 }
                 for i in 6..10u32 {
-                    bytes[i as usize] ^= (((*story_id) >> (8 * (i - 2))) & 0xff) as u8;
+                    bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
                 }
                 bytes
             }
@@ -168,7 +168,7 @@ impl BytesEncode for Response {
                     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
                 }
                 for i in 6..10u32 {
-                    bytes[i as usize] ^= (((*story_id) >> (8 * (i - 2))) & 0xff) as u8;
+                    bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
                 }
                 bytes
             }
@@ -179,7 +179,7 @@ impl BytesEncode for Response {
                     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
                 }
                 for i in 6..10u32 {
-                    bytes[i as usize] ^= (((*story_id) >> (8 * (i - 2))) & 0xff) as u8;
+                    bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
                 }
                 bytes
             }
@@ -190,7 +190,7 @@ impl BytesEncode for Response {
                     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
                 }
                 for i in 6..10u32 {
-                    bytes[i as usize] ^= (((*story_id) >> (8 * (i - 2))) & 0xff) as u8;
+                    bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
                 }
                 bytes
             }
@@ -212,7 +212,6 @@ impl BytesEncode for Response {
             || type_and_flag_bytes & (1 << 8) != 0 || type_and_flag_bytes & (1 << 9) != 0
             || type_and_flag_bytes & (1 << 10) != 0 || type_and_flag_bytes & (1 << 10) != 0
             || type_and_flag_bytes & (1 << 11) != 0
-
         {
             epic_id = parse_4_bytes(&tag[2..6]);
             if type_and_flag_bytes & (1 << 8) != 0 || type_and_flag_bytes & (1 << 9) != 0
@@ -254,9 +253,52 @@ mod test {
         let response = Response::GetEpicOk(vec![]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0])
+        assert_eq!(encoding, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0]);
 
-        //TODO: finish the rest of the encodings
+        let response = Response::EpicStatusUpdateOk(2353, vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [128, 32, 49, 9, 0, 0, 0, 0, 0, 0]);
+
+        let response = Response::EpicDoesNotExist(2353, vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0]);
+
+        let response = Response::GetStoryOk(vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        let response = Response::StoryDoesNotExist(2353, 4798, vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [129, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+
+        let response = Response::AddedStoryOk(2353, 4798, vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [130, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+
+        let response = Response::DeletedStoryOk(2353, 4798, vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+
+        let response = Response::StoryStatusUpdateOk(2353, 4798, vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [136, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+
+        let response = Response::DeletedStoryOk(2353, 4798, vec![]);
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+
+        let response = Response::RequestNotParsed;
+        let encoding = response.encode();
+        println!("{:?}", encoding);
+        assert_eq!(encoding, [16, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
     }
 }
