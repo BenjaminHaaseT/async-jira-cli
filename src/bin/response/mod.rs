@@ -408,6 +408,69 @@ mod test {
 
     #[test]
     fn test_response_as_bytes() {
-        todo!()
+        let response = Response::ClientAddedOk(vec![1, 2, 3]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, vec![128, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+
+        let response = Response::ClientAlreadyExists;
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, vec![0, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        let response = Response::AddedEpicOk(2353, vec![1, 2, 3]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, vec![128, 4, 49, 9, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+
+        let response = Response::DeletedEpicOk(2353, vec![1, 2, 3]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, vec![128, 8, 49, 9, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+
+        let response = Response::GetEpicOk(vec![1, 2, 3]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+
+        let response = Response::EpicStatusUpdateOk(2353, vec![1, 2, 3]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, [128, 32, 49, 9, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+
+        let response = Response::EpicDoesNotExist(2353, vec![1, 2, 3, 4]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4]);
+
+        let response = Response::GetStoryOk(vec![1, 2, 3,]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+
+        let response = Response::StoryDoesNotExist(2353, 4798, vec![1, 2, 3]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, [129, 0, 49, 9, 0, 0, 190, 18, 0, 0, 1, 2, 3]);
+
+        let response = Response::AddedStoryOk(2353, 4798, vec![1, 2, 3]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, [130, 0, 49, 9, 0, 0, 190, 18, 0, 0, 1, 2, 3]);
+
+        let response = Response::DeletedStoryOk(2353, 4798, vec![1, 2, 3]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0, 1, 2, 3]);
+
+        let response = Response::StoryStatusUpdateOk(2353, 4798, vec![1, 2, 3]);
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, [136, 0, 49, 9, 0, 0, 190, 18, 0, 0, 1, 2, 3]);
+
+        let response = Response::RequestNotParsed;
+        let bytes = response.as_bytes();
+        println!("{:?}", bytes);
+        assert_eq!(bytes, [16, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 }

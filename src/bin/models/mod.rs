@@ -870,8 +870,8 @@ mod test {
     #[test]
     fn create_epic_should_work() {
         let epic = Epic::new(
-            1,
-            String::from("Test Epic 1"),
+            99,
+            String::from("Test Epic 99"),
             String::from("A simple test epic"),
             Status::Open,
             PathBuf::new(),
@@ -911,11 +911,11 @@ mod test {
     #[test]
     fn test_epic_create_write_and_load_from_file() {
         let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
-        test_file_path.push("epic1.txt");
+        test_file_path.push("epic99.txt");
 
         let mut epic = Epic::new(
-            1,
-            String::from("Test Epic 1"),
+            99,
+            String::from("Test Epic 99"),
             String::from("A simple test epic"),
             Status::Open,
             test_file_path.clone(),
@@ -946,7 +946,7 @@ mod test {
         test_file_path.push("epic2.txt");
 
         let mut epic = Epic::new(
-            2,
+            100,
             String::from("Test Epic 2"),
             String::from("A simple test epic"),
             Status::Open,
@@ -990,11 +990,11 @@ mod test {
     #[test]
     fn test_epic_delete_story() {
         let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
-        test_file_path.push("epic3.txt");
+        test_file_path.push("epic101.txt");
 
         let mut epic = Epic::new(
-            3,
-            String::from("Test Epic 3"),
+            101,
+            String::from("Test Epic 101"),
             String::from("A simple test epic"),
             Status::Open,
             test_file_path.clone(),
@@ -1037,11 +1037,11 @@ mod test {
     #[test]
     fn test_epic_update_status() {
         let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
-        test_file_path.push("epic4.txt");
+        test_file_path.push("epic102.txt");
 
         let mut epic = Epic::new(
-            4,
-            String::from("Test Epic 4"),
+            102,
+            String::from("Test Epic 102"),
             String::from("A simple test epic"),
             Status::Open,
             test_file_path.clone(),
@@ -1088,8 +1088,8 @@ mod test {
     fn test_create_db_state_add_epics_write_and_read() {
         let mut db_state = DbState::new(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
-            "test_db.txt".to_string(),
-            "test_epics".to_string()
+            "test_db1.txt".to_string(),
+            "test_epics1".to_string()
         );
 
         assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()), 1);
@@ -1104,8 +1104,8 @@ mod test {
 
         let mut db_state_prime_result = DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
-            "test_db.txt".to_string(),
-            "test_epics".to_string()
+            "test_db1.txt".to_string(),
+            "test_epics1".to_string()
         );
 
         println!("{:?}", db_state_prime_result);
@@ -1119,11 +1119,11 @@ mod test {
 
     #[test]
     fn test_db_state_add_delete_epic() {
-        let mut db_state = DbState::load(
+        let mut db_state = DbState::new(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
-            "test_db.txt".to_string(),
-            "test_epics".to_string()
-        ).expect("should load");
+            "test_db2.txt".to_string(),
+            "test_epics2".to_string()
+        );
 
         println!("{:?}", db_state);
 
@@ -1138,9 +1138,10 @@ mod test {
 
         let mut db_state = DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
-            "test_db.txt".to_string(),
-            "test_epics".to_string()
+            "test_db2.txt".to_string(),
+            "test_epics2".to_string()
         ).expect("should load");
+
 
         println!("{:?}", db_state);
 
@@ -1154,15 +1155,15 @@ mod test {
 
         assert!(db_state.write().is_ok());
 
-        let mut db_state = DbState::load(
+        let mut db_state_loaded = DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
-            "test_db.txt".to_string(),
-            "test_epics".to_string()
+            "test_db2.txt".to_string(),
+            "test_epics2".to_string()
         ).expect("should load");
 
-        println!("{:?}", db_state);
+        println!("{:?}", db_state_loaded);
 
-        assert!(!db_state.contains_epic(cur_max_id));
+        assert!(!db_state_loaded.contains_epic(cur_max_id));
     }
 
     #[test]
@@ -1175,13 +1176,13 @@ mod test {
 
         println!("{:?}", db_state);
 
-        let cur_id = db_state.add_epic("Test Epic".to_string(), "A test Epic for adding/deleting stories".to_string());
+        let cur_epic_id = db_state.add_epic("Test Epic".to_string(), "A test Epic for adding/deleting stories".to_string());
 
-        println!("{:?}", cur_id);
+        println!("{:?}", cur_epic_id);
 
-        assert!(db_state.add_story(cur_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
-        assert!(db_state.add_story(cur_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
-        assert!(db_state.add_story(cur_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
+        assert!(db_state.add_story(cur_epic_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
+        assert!(db_state.add_story(cur_epic_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
+        assert!(db_state.add_story(cur_epic_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
 
         println!("{:?}", db_state);
 
@@ -1195,13 +1196,13 @@ mod test {
 
         println!("{:?}", db_state);
 
-        assert!(db_state.contains_epic(cur_id));
+        assert!(db_state.contains_epic(cur_epic_id));
 
         let cur_story_id = db_state.last_unique_id;
 
-        assert!(db_state.delete_story(cur_id, cur_story_id).is_ok());
+        assert!(db_state.delete_story(cur_epic_id, cur_story_id).is_ok());
 
-        assert!(db_state.delete_story(cur_id, cur_story_id).is_err());
+        assert!(db_state.delete_story(cur_epic_id, cur_story_id).is_err());
     }
 
     #[test]
@@ -1290,6 +1291,5 @@ mod test {
 
         assert!(bytes.starts_with(epic_bytes.as_slice()) || bytes.ends_with(epic_bytes.as_slice()));
         assert!(bytes.starts_with(new_epic_bytes.as_slice()) || bytes.ends_with(new_epic_bytes.as_slice()));
-
     }
 }
