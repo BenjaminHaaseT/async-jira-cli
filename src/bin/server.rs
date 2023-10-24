@@ -139,6 +139,8 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Eve
     let client_stream = Arc::new(client_stream);
     let mut client_stream_reader = &*client_stream;
 
+    // TODO: set up the synchronization method signal to broker that a peer's connection has been dropped in this task
+
     // Create custom id for new client
     let client_id = Uuid::new_v4();
 

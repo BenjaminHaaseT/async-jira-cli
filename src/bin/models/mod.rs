@@ -820,10 +820,16 @@ impl std::fmt::Display for DbError {
     }
 }
 
+/// The decoded tag type that both `Epic`s and `Story`s get decoded from. A tuple that represents
+/// the id of the object, the length (in bytes) of its name and description, and a byte that
+/// represents the status of the object.
 type DecodeTag = (u32, u32, u32, u8);
 
 impl TagDecoding for DecodeTag {}
 
+/// The encoded tag type that both `Epic`s and `Story`s get encoded into. An array of bytes,
+/// that holds the encoded id of the object, the length (in bytes) of the name and description of
+/// the object and a status byte that represents the object's status.
 type EncodeTag = [u8; 13];
 
 impl TagEncoding for EncodeTag {}
