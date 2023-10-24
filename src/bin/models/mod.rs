@@ -190,7 +190,7 @@ impl DbState {
 
 /// A top level asynchronous abstraction for the database. Handles all of the reads and writes to the data base.
 /// Essentially an asynchronous version of `DbState`
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct AsyncDbState {
     /// Holds the mapping from epic id's to `Epic`s
     epics: HashMap<u32, Epic>,
@@ -272,10 +272,8 @@ impl AsyncDbState {
     /// file if an associated db file has not been created, otherwise it will overwrite the
     /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
-    ///
-    /// The method is async, since it needs to lock each of the `Epics` behind the `RwLock`.
     pub async fn write(&self) -> Result<(), DbError> {
-        let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new().write(true).truncate(true).open(&self.file_path).await {
+        let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new().write(true).truncate(true).create(true).open(&self.file_path).await {
             async_std::io::BufWriter::new(f)
         } else {
             return Err(DbError::FileLoadError(format!("unable to open or create associated file: {:?}", self.file_path.to_str())))
@@ -284,13 +282,20 @@ impl AsyncDbState {
         for (id, epic) in &self.epics {
             // TODO: make general for all operating systems
             let epic_file_path_string = format!("{}/{}/epic{id}.txt", &self.db_dir, &self.epic_dir);
-            let line = format!("{},{}\n", id, epic_file_path_string).into_bytes();
+            let line = format!("{},{}\n", id, epic_file_path_string);
+            println!("{}", line);
+            let line = line.into_bytes();
             writer.write(line.as_slice())
                 .await
                 .map_err(
                     |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
             epic.write_async().await?;
         }
+
+        writer.flush()
+            .await
+            .map_err(
+                |_| DbError::FileWriteError(format!("unable to flush buffer when writing to file: {}", self.db_file_name)))?;
 
         Ok(())
     }
@@ -552,6 +557,10 @@ impl Epic {
                 .await
                 .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} description to file", story.description.as_str())))?;
         }
+
+        writer.flush()
+            .await
+            .map_err(|_| DbError::FileWriteError(format!("unable to flush writer to file: {:?}", self.file_path.to_str())))?;
 
         Ok(())
     }
@@ -1291,5 +1300,188 @@ mod test {
 
         assert!(bytes.starts_with(epic_bytes.as_slice()) || bytes.ends_with(epic_bytes.as_slice()));
         assert!(bytes.starts_with(new_epic_bytes.as_slice()) || bytes.ends_with(new_epic_bytes.as_slice()));
+    }
+
+    #[test]
+    fn test_create_new_async_db_state() {
+        let db_state = AsyncDbState::new(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_async_db1.txt".to_string(),
+            "async_test_epics1".to_string()
+        );
+
+        println!("{:?}", db_state);
+
+        assert!(true);
+    }
+
+    #[test]
+    fn test_async_db_state_read_and_write() {
+        use async_std::task;
+        let mut db_state = AsyncDbState::new(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_async_db1.txt".to_string(),
+            "async_test_epics1".to_string(),
+        );
+
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 1);
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 2);
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 3);
+
+        println!("{:?}", db_state);
+
+        let handle = task::block_on(db_state.write());
+
+        println!("{:?}", handle);
+
+        assert!(handle.is_ok());
+
+        let mut db_state_loaded_res = AsyncDbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_async_db1.txt".to_string(),
+            "async_test_epics1".to_string()
+        );
+
+        assert!(db_state_loaded_res.is_ok());
+
+        assert_eq!(db_state, db_state_loaded_res.unwrap());
+    }
+
+    #[test]
+    fn test_async_db_state_read_write_delete_epic() {
+        use async_std::task;
+        let mut db_state = AsyncDbState::new(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_async_db2.txt".to_string(),
+            "async_test_epics2".to_string(),
+        );
+
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 1);
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 2);
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 3);
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 4);
+
+        println!("{:?}", db_state);
+
+        let handle = task::block_on(db_state.write());
+
+        println!("{:?}", handle);
+
+        assert!(handle.is_ok());
+
+        let mut db_state_loaded_res = AsyncDbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_async_db2.txt".to_string(),
+            "async_test_epics2".to_string()
+        );
+
+        assert!(db_state_loaded_res.is_ok());
+
+        assert_eq!(db_state, db_state_loaded_res.unwrap());
+
+        assert!(db_state.contains_epic(4));
+
+        assert!(db_state.delete_epic(4).is_ok());
+
+        assert!(!db_state.contains_epic(4));
+
+        println!("{:?}", db_state);
+
+        let handle = task::block_on(db_state.write());
+
+        println!("{:?}", handle);
+
+        assert!(handle.is_ok());
+
+        let db_state_loaded_res = AsyncDbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_async_db2.txt".to_string(),
+            "async_test_epics2".to_string()
+        );
+
+        assert!(db_state_loaded_res.is_ok());
+
+        let db_state_loaded = db_state_loaded_res.unwrap();
+
+        assert!(!db_state_loaded.contains_epic(4));
+    }
+
+    #[test]
+    fn test_async_db_read_write_add_story() {
+        use async_std::task;
+        let mut db_state = AsyncDbState::new(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_async_db3.txt".to_string(),
+            "async_test_epics3".to_string(),
+        );
+
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 1);
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 2);
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 3);
+        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 4);
+
+        println!("{:?}", db_state);
+
+        assert!(db_state.contains_epic(4));
+
+        let handle = task::block_on(db_state.add_story(4, "A simple test story".to_string(), "A simple test story decsription".to_string()));
+
+        println!("{:?}", handle);
+
+        assert!(handle.is_ok());
+
+        println!("{:?}", db_state);
+
+        assert!(task::block_on(db_state.write()).is_ok());
+
+        let mut db_state_loaded_res = AsyncDbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_async_db3.txt".to_string(),
+            "async_test_epics3".to_string()
+        );
+
+        assert!(db_state_loaded_res.is_ok());
+
+        let db_state_loaded = db_state_loaded_res.unwrap();
+
+        assert!(db_state_loaded.contains_epic(4));
+
+        let epic = db_state_loaded.get_epic(4).unwrap();
+
+        assert!(epic.get_story(5).is_some());
+
+        // Now try deleting the story
+        let epic = db_state.get_epic_mut(4).unwrap();
+
+        assert!(epic.delete_story(5).is_ok());
+
+        let handle = task::block_on(epic.write_async());
+
+        println!("{:?}", handle);
+
+        assert!(handle.is_ok());
+
+        let handle = task::block_on(db_state.write());
+
+        println!("{:?}", handle);
+
+        assert!(handle.is_ok());
+
+        // Ensure changes persist
+        let mut db_state_loaded_res = AsyncDbState::load(
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "test_async_db3.txt".to_string(),
+            "async_test_epics3".to_string()
+        );
+
+        assert!(db_state_loaded_res.is_ok());
+
+        let db_state_loaded = db_state_loaded_res.unwrap();
+
+        assert!(db_state_loaded.contains_epic(4));
+
+        let epic = db_state_loaded.get_epic(4).unwrap();
+
+        assert!(epic.get_story(5).is_none());
     }
 }
