@@ -343,20 +343,23 @@ async fn broker(
                 if let Some(epic) = db_handle.get_epic_mut(epic_id) {
                     match epic.delete_story(story_id) {
                         Ok(_) => {
-                            if let Err(_) = client_sender.send(Response::DeletedStoryOk(epic_id, story_id, epic.as_bytes())).await {
-                                eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
-                            }
+                            let _ = log_connection_error(client_sender.send(Response::DeletedStoryOk(epic_id, story_id, epic.as_bytes())).await, peer_id);
+                            // if let Err(_) = client_sender.send(Response::DeletedStoryOk(epic_id, story_id, epic.as_bytes())).await {
+                            //     eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                            // }
                         }
                         Err(_) => {
-                            if let Err(_) = client_sender.send(Response::StoryDoesNotExist(epic_id, story_id,epic.as_bytes())).await {
-                                eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
-                            }
+                            let _ = log_connection_error(client_sender.send(Response::StoryDoesNotExist(epic_id, story_id, epic.as_bytes())).await, peer_id);
+                            // if let Err(_) = client_sender.send(Response::StoryDoesNotExist(epic_id, story_id,epic.as_bytes())).await {
+                            //     eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                            // }
                         }
                     }
                 } else {
-                    if let Err(_) = client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await {
-                        eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
-                    }
+                    let _ = log_connection_error(client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await, peer_id);
+                    // if let Err(_) = client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await {
+                    //     eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                    // }
                 }
             }
             Event::UpdateStoryStatus { peer_id, epic_id, story_id, status} => {
@@ -364,27 +367,32 @@ async fn broker(
                 if let Some(epic) = db_handle.get_epic_mut(epic_id) {
                     match epic.update_story_status(story_id, status) {
                         Ok(_) => {
-                            if let Err(_) = client_sender.send(Response::StoryStatusUpdateOk(epic_id, story_id, epic.as_bytes())).await {
-                                eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
-                            }
+                            let _ = log_connection_error(client_sender.send(Response::StoryStatusUpdateOk(epic_id, story_id, epic.as_bytes())).await, peer_id);
+                            // if let Err(_) = client_sender.send(Response::StoryStatusUpdateOk(epic_id, story_id, epic.as_bytes())).await {
+                            //     eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                            // }
                         }
                         Err(_) => {
-                            if let Err(_) = client_sender.send(Response::StoryDoesNotExist(epic_id, story_id, epic.as_bytes())).await {
-                                eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
-                            }
+                            let _ = log_connection_error(client_sender.send(Response::StoryDoesNotExist(epic_id, story_id, epic.as_bytes())).await, peer_id);
+                            // if let Err(_) = client_sender.send(Response::StoryDoesNotExist(epic_id, story_id, epic.as_bytes())).await {
+                            //     eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                            // }
                         }
                     }
                 } else {
-                    if let Err(_) = client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await {
-                        eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
-                    }
+                    let _ = log_connection_error(client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await, peer_id);
+
+                    // if let Err(_) = client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await {
+                    //     eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                    // }
                 }
             }
             Event::UnparseableEvent { peer_id } => {
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                if let Err(_) = client_sender.send(Response::RequestNotParsed).await {
-                    eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
-                }
+                let _ = log_connection_error(client_sender.send(Response::RequestNotParsed).await, peer_id);
+                // if let Err(_) = client_sender.send(Response::RequestNotParsed).await {
+                //     eprintln!("error: {}", DbError::ConnectionError(format!("unable to send response to client {}", peer_id)));
+                // }
             }
         }
     }
