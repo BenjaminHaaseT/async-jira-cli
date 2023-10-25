@@ -26,6 +26,7 @@ use std::thread::spawn;
 use models::prelude::*;
 use events::prelude::*;
 use response::prelude::*;
+use utils::Void;
 mod interface;
 
 
@@ -78,7 +79,7 @@ async fn accept_loop(addrs: impl ToSocketAddrs + Debug + Clone, channel_buf_size
     Ok(())
 }
 
-enum Void {}
+
 
 /// Takes a `TcpStream` and a `Sender<Option<Event>>` representing the client connection and the sending
 /// end of a channel connected to a broker task. Attempts to read new events from the client stream and send them
