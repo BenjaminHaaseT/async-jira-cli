@@ -11,78 +11,23 @@ use async_std::{
     net::{TcpListener, ToSocketAddrs, TcpStream},
 };
 
-use futures::channel::mpsc::{self, Receiver, Sender, SendError};
-// use futures::io::AsyncReadExt;
+use futures::channel::mpsc::{self, Receiver, Sender, SendError, UnboundedReceiver};
+use futures::select;
 use futures::sink::SinkExt;
+use futures::{StreamExt, Stream, FutureExt};
 use uuid::Uuid;
 
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::convert::TryFrom;
 use std::collections::HashMap;
+use std::thread::spawn;
 
 use models::prelude::*;
 use events::prelude::*;
 use response::prelude::*;
 mod interface;
 
-// /// A response to an `Event` sent by a client.
-// enum Response {
-//     /// Response for a successful client connection, holds the database
-//     /// `Epics` encoded in a `Vec<u8`
-//     ClientAddedOk(Vec<u8>),
-//
-//     /// Response for an unsuccessful client connection
-//     ClientAlreadyExists,
-//
-//     /// Response of a successful addition of an `Epic` to the database, holds the epic id
-//     /// and the encoded database epic's in a `u32` and `Vec<u8>`
-//     AddedEpicOk(u32, Vec<u8>),
-//
-//     /// Response for a successful deletion of an `Epic`, holds the epic id and the
-//     /// encoded state of database as a `Vec<u8>`
-//     DeletedEpicOk(u32, Vec<u8>),
-//
-//     /// Response for successful retrieval of an `Epic`, holds
-//     /// the encoded data of the epic in a `Vec<u8>`
-//     GetEpicOk(Vec<u8>),
-//
-//     /// Response for a successful status update for a particular `Epic`, holds the id of
-//     /// the updated epic and its encoded data in `u32` and `Vec<u8>` respectively
-//     EpicStatusUpdateOk(u32, Vec<u8>),
-//
-//     /// Response for an unsuccessful retrieval of an `Epic`, holds the id of the epic in a `u32`
-//     EpicDoesNotExist(u32),
-//
-//     /// Response for a successful retrieval of a `Story`, holds the
-//     /// encoded data of the story in a `Vec<u8>`
-//     GetStoryOk(Vec<u8>),
-//
-//     /// Response for an unsuccessful retrieval of a `Story`, holds the epic id and story id
-//     StoryDoesNotExist(u32, u32),
-//
-//     /// Response for a successful addition of a `Story`, holds the epic id,
-//     /// story id and the epic encoded as (`u32`, `u32`, `Vec<u8>`)
-//     AddedStoryOk(u32, u32, Vec<u8>),
-//
-//     /// Response for a successful deletion of a `Story`, holds the epic id,
-//     /// story id and the epic encoded as (`u32`, `u32`, `Vec<u8>`)
-//     DeletedStoryOk(u32, u32, Vec<u8>),
-//
-//     /// Response for successful update of `Story` status, holds the epic id the contains
-//     /// the story, the story id and the epic encoded as (`u32`, `u32`, `Vec<u8>`)
-//     StoryStatusUpdateOk(u32, u32, Vec<u8>),
-//
-//     /// Response for any event that was unable to be parsed correctly
-//     RequestNotParsed
-// }
-//
-// impl Response {
-//     /// Method that will convert a `Response` into an encoded slice of bytes
-//     fn as_bytes(&self) -> &[u8] {
-//         todo!()
-//     }
-// }
 
 /// Helper function that will take a future, spawn it as a new task and log any errors propagated from the spawned future.
 async fn spawn_and_log_errors(f: impl Future<Output = Result<(), DbError>> + Send + 'static) -> task::JoinHandle<()> {
@@ -120,15 +65,20 @@ async fn accept_loop(addrs: impl ToSocketAddrs + Debug + Clone, channel_buf_size
 
     // Get a channel to the broker, and spawn the brokers task
     let (broker_sender, broker_receiver) = mpsc::channel::<Event>(channel_buf_size);
-    let _broker_handle = task::spawn(broker(broker_receiver, db_dir, db_file_name, epic_dir, channel_buf_size));
+    let broker_handle = task::spawn(broker(broker_receiver, db_dir, db_file_name, epic_dir, channel_buf_size));
 
     while let Some(stream_res) = listener.incoming().next().await {
         let stream = stream_res.map_err(|_e| DbError::ConnectionError(format!("unable to accept stream")))?;
         let _ = spawn_and_log_errors(connection_loop(stream, broker_sender.clone()));
     }
-
+    // Drop the broker's sender
+    drop(broker_sender);
+    // Await the result from the broker's task
+    broker_handle.await?;
     Ok(())
 }
+
+enum Void {}
 
 /// Takes a `TcpStream` and a `Sender<Option<Event>>` representing the client connection and the sending
 /// end of a channel connected to a broker task. Attempts to read new events from the client stream and send them
@@ -140,12 +90,13 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Eve
     let mut client_stream_reader = &*client_stream;
 
     // TODO: set up the synchronization method signal to broker that a peer's connection has been dropped in this task
+    let (_shutdown_sender, shutdown_receiver) = mpsc::unbounded::<Void>();
 
     // Create custom id for new client
     let client_id = Uuid::new_v4();
 
     // Create a new client and send to broker
-    let new_client = Event::NewClient { peer_id: client_id.clone(), stream: client_stream.clone() };
+    let new_client = Event::NewClient { peer_id: client_id.clone(), stream: client_stream.clone(), shutdown: shutdown_receiver };
     broker_sender.send(new_client)
         .await
         .unwrap();
@@ -169,18 +120,31 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Eve
             }
         }
     }
-    // TODO: Handle event when client disconnects, need to set up a synchornization method
+
     Ok(())
 }
 
 /// Takes `stream` and `client_receiver` and writes all responses received from the broker task to
 /// `stream`.
-async fn connection_write_loop(stream: Arc<TcpStream>, mut client_receiver: Receiver<Response>) -> Result<(), DbError> {
+async fn connection_write_loop(stream: Arc<TcpStream>, client_receiver: &mut Receiver<Response>, client_shutdown: UnboundedReceiver<Void>) -> Result<(), DbError> {
     let mut stream = &*stream;
-    while let Some(resp) = client_receiver.next().await {
-        stream.write_all(resp.as_bytes().as_slice())
-            .await
-            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client")))?;
+    let mut client_receiver = client_receiver.fuse();
+    let mut client_shutdown = client_shutdown.fuse();
+    loop {
+        select! {
+            response = client_receiver.next().fuse() => match response {
+                Some(resp) => {
+                    stream.write_all(resp.as_bytes().as_slice())
+                            .await
+                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client")))?
+                }
+                None => break
+            },
+            void = client_shutdown.next().fuse() => match void {
+                Some(void) => {}
+                None => break,
+            }
+        }
     }
     Ok(())
 }
@@ -195,30 +159,71 @@ async fn broker(
     epic_dir: String,
     channel_buf_size: usize,
 ) -> Result<(), DbError> {
+    // For reaping disconnected peers
+    let (disconnect_sender, disconnect_receiver) = mpsc::unbounded::<(Uuid, Receiver<Response>)>();
+
+    // For managing the state of the database
     let mut db_handle = AsyncDbState::load(db_dir, db_file_name, epic_dir)?;
+
+    // Holds clients currently connected to the server
     let mut clients: HashMap<Uuid, Sender<Response>> = HashMap::new();
-    while let Some(event) = receiver.next().await {
+
+    let mut events = receiver.fuse();
+    let mut disconnect_receiver = disconnect_receiver.fuse();
+
+    loop {
+        // Attempt to read an event or disconnect a peer
+        let event = select! {
+            event = events.next().fuse() => match event {
+                Some(event) => event,
+                None => break,
+            },
+            disconnect = disconnect_receiver.next().fuse() => match disconnect {
+                Some((peer_id, _client_receiver)) => {
+                    assert!(clients.remove(&peer_id).is_some());
+                    continue;
+                }
+                None => break,
+            },
+        };
+
         // Process each event received
         match event {
-            Event::NewClient { peer_id, stream } => {
+            // New client, ensure client has not already been added, and start a new write process
+            // that will write responses to the write-half of the clients TcpStream. Instantiate
+            // client_sender/client_receiver sides of a channel for sending/receiving responses from
+            // the broker. Clone the disconnect_sender so that when the client process is finished,
+            // the broker may be alerted.
+            Event::NewClient { peer_id, stream, shutdown } => {
                 if !clients.contains_key(&peer_id) {
-                    let (mut client_sender, client_receiver) = mpsc::channel::<Response>(channel_buf_size);
-                    task::spawn(connection_write_loop(stream, client_receiver));
-                    if !log_connection_error(client_sender.send(Response::ClientAddedOk(db_handle.as_bytes())).await, peer_id) {
-                        clients.insert(peer_id, client_sender);
-                    }
+                    let (mut client_sender, mut client_receiver) = mpsc::channel::<Response>(channel_buf_size);
+                    clients.insert(peer_id, client_sender.clone());
+                    let mut disconnect_sender = disconnect_sender.clone();
+                    let _ = spawn_and_log_errors(
+                        async move {
+                            let res = connection_write_loop(stream, &mut client_receiver, shutdown).await;
+                            let _ = disconnect_sender.send((peer_id, client_receiver)).await;
+                            res
+                        }
+                    );
+                    let _ = log_connection_error(client_sender.send(Response::ClientAddedOk(db_handle.as_bytes())).await, peer_id);
                 } else {
-                    let mut client_sender = clients.get_mut(&peer_id).unwrap();
-                    let _ = log_connection_error(client_sender.send(Response::ClientAlreadyExists).await, peer_id);
+                    // let mut client_sender = clients.get_mut(&peer_id).unwrap();
+                    // let _ = log_connection_error(client_sender.send(Response::ClientAlreadyExists).await, peer_id);
+                    // TODO: Log errors, instead of writing to stderr
+                    eprintln!("error: client already exists");
                 }
             }
+            // Adds an epic to the db_handle, and writes it to the database
             Event::AddEpic { peer_id, epic_name, epic_description } => {
                 let epic_id = db_handle.add_epic(epic_name, epic_description);
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // Send response to client
                 let _ = log_connection_error(client_sender.send(Response::AddedEpicOk(epic_id, db_handle.as_bytes())).await, peer_id);
                 // Ensure changes persist in database
                 db_handle.write().await?;
             }
+            // Deletes an epic from the db_handle, writes changes to the database
             Event::DeleteEpic { peer_id, epic_id} => {
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
                 // Ensure epic_id is a valid epic
@@ -235,6 +240,7 @@ async fn broker(
                     }
                 }
             }
+            // Gets an epics information from the database
             Event::GetEpic { peer_id, epic_id } => {
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
                 match db_handle.get_epic(epic_id) {
@@ -247,6 +253,7 @@ async fn broker(
                     }
                 }
             }
+            // Update the status of an epic in the database
             Event::UpdateEpicStatus { peer_id, epic_id, status}  => {
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
                 if let Some(epic) = db_handle.get_epic_mut(epic_id) {
@@ -258,6 +265,7 @@ async fn broker(
                     let _ = log_connection_error(client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await, peer_id);
                 }
             }
+            // Gets a story from the database
             Event::GetStory { peer_id,epic_id, story_id} => {
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
                 if let Some(epic) = db_handle.get_epic(epic_id) {
@@ -273,6 +281,7 @@ async fn broker(
                     let _ = log_connection_error(client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await, peer_id);
                 }
             }
+            // Adds a story to the the current epic, writes changes to the epic's file
             Event::AddStory { peer_id, epic_id, story_name, story_description} => {
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
                 match db_handle.add_story(epic_id, story_name, story_description).await {
@@ -286,6 +295,7 @@ async fn broker(
                     }
                 }
             }
+            // Deletes a story from the current epic, writes changes to the epic's file
             Event::DeleteStory {peer_id, epic_id, story_id} => {
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
                 if let Some(epic) = db_handle.get_epic_mut(epic_id) {
@@ -303,6 +313,7 @@ async fn broker(
                     let _ = log_connection_error(client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await, peer_id);
                 }
             }
+            // Updates the status of a story, writes changes to the epic's file
             Event::UpdateStoryStatus { peer_id, epic_id, story_id, status} => {
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
                 if let Some(epic) = db_handle.get_epic_mut(epic_id) {
@@ -320,14 +331,19 @@ async fn broker(
                     let _ = log_connection_error(client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await, peer_id);
                 }
             }
+            // The event was unable to be parsed, send a response informing the client
             Event::UnparseableEvent { peer_id } => {
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
                 let _ = log_connection_error(client_sender.send(Response::RequestNotParsed).await, peer_id);
             }
         }
     }
-    // TODO: handle gracefull shutdown, ensure writing tasks get complete etc...
-    todo!()
+    // Drop clients so that writers will finish
+    drop(clients);
+    // Drop disconnect_sender, and drain the rest of the disconnected peers
+    drop(disconnect_sender);
+    while let Some((_peer_id, _client_receiver)) = disconnect_receiver.next().await {}
+    Ok(())
 }
 
 fn main() {todo!()}

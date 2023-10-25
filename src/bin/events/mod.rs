@@ -4,7 +4,9 @@ use async_std::{
     prelude::*,
     net::TcpStream,
 };
+use futures::channel::mpsc::UnboundedReceiver;
 use uuid::Uuid;
+use crate::Void;
 use crate::models::{Status, DbError};
 use crate::utils::parse_4_bytes;
 
@@ -18,6 +20,7 @@ pub enum Event {
     NewClient {
         peer_id: Uuid,
         stream: Arc<TcpStream>,
+        shutdown: UnboundedReceiver<Void>
     },
 
     /// Represents a client request to add an `Epic`
