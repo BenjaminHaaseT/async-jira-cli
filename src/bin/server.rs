@@ -164,7 +164,7 @@ async fn broker(
     let (disconnect_sender, disconnect_receiver) = mpsc::unbounded::<(Uuid, Receiver<Response>)>();
 
     // For managing the state of the database
-    let mut db_handle = AsyncDbState::load(db_dir, db_file_name, epic_dir)?;
+    let mut db_handle = DbState::load(db_dir, db_file_name, epic_dir)?;
 
     // Holds clients currently connected to the server
     let mut clients: HashMap<Uuid, Sender<Response>> = HashMap::new();
@@ -222,7 +222,7 @@ async fn broker(
                 // Send response to client
                 let _ = log_connection_error(client_sender.send(Response::AddedEpicOk(epic_id, db_handle.as_bytes())).await, peer_id);
                 // Ensure changes persist in database
-                db_handle.write().await?;
+                db_handle.write_async().await?;
             }
             // Deletes an epic from the db_handle, writes changes to the database
             Event::DeleteEpic { peer_id, epic_id} => {
@@ -233,7 +233,7 @@ async fn broker(
                     Ok(_epic) => {
                         let _ = log_connection_error(client_sender.send(Response::DeletedEpicOk(epic_id, db_handle.as_bytes())).await, peer_id);
                         // Ensure changes persist in the database
-                        db_handle.write().await?;
+                        db_handle.write_async().await?;
                     }
                     // The epic does not exist, send reply back to client
                     Err(_e) => {
@@ -285,7 +285,7 @@ async fn broker(
             // Adds a story to the the current epic, writes changes to the epic's file
             Event::AddStory { peer_id, epic_id, story_name, story_description} => {
                 let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                match db_handle.add_story(epic_id, story_name, story_description).await {
+                match db_handle.add_story_async(epic_id, story_name, story_description).await {
                     Ok(story_id) => {
                         let _ = log_connection_error(client_sender.send(Response::AddedStoryOk(epic_id, story_id, db_handle.get_epic(epic_id).unwrap().as_bytes())).await, peer_id);
                         // Write new story to database

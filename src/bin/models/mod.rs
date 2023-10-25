@@ -13,7 +13,7 @@ use std::os::ffi::{OsStrExt, OsStringExt};
 use std::os::ffi::{OsStrExt, OsStringExt};
 
 use std::error::Error;
-use std::io::{self, Seek, SeekFrom, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
+use std::io::{Seek, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
 use std::convert::{TryFrom, Into, AsRef};
 use std::cmp::PartialEq;
 use std::fmt::Formatter;
@@ -116,6 +116,37 @@ impl DbState {
         Ok(())
     }
 
+    /// Method for writing the contents of the `DbState` to its associated file. Will create a new
+    /// file if an associated db file has not been created, otherwise it will overwrite the
+    /// contents of the associated file.  Returns a `Result<(), DbError>`
+    /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
+    pub async fn write_async(&self) -> Result<(), DbError> {
+        let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new().write(true).truncate(true).create(true).open(&self.file_path).await {
+            async_std::io::BufWriter::new(f)
+        } else {
+            return Err(DbError::FileLoadError(format!("unable to open or create associated file: {:?}", self.file_path.to_str())))
+        };
+
+        for (id, epic) in &self.epics {
+            // TODO: make general for all operating systems
+            let epic_file_path_string = format!("{}/{}/epic{id}.txt", &self.db_dir, &self.epic_dir);
+            let line = format!("{},{}\n", id, epic_file_path_string);
+            let line = line.into_bytes();
+            writer.write(line.as_slice())
+                .await
+                .map_err(
+                    |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
+            epic.write_async().await?;
+        }
+
+        writer.flush()
+            .await
+            .map_err(
+                |_| DbError::FileWriteError(format!("unable to flush buffer when writing to file: {}", self.db_file_name)))?;
+
+        Ok(())
+    }
+
     /// Removes an epic with `id` from the `DbState`. Returns a `Result<Epic, DbError>`,
     /// the `Ok` variant if the delete was successful, otherwise the `Err` variant.
     pub fn delete_epic(&mut self, id: u32) -> Result<Epic, DbError> {
@@ -186,160 +217,10 @@ impl DbState {
             Err(e) => Err(e)
         }
     }
-}
-
-/// A top level asynchronous abstraction for the database. Handles all of the reads and writes to the data base.
-/// Essentially an asynchronous version of `DbState`
-#[derive(Debug, PartialEq)]
-pub struct AsyncDbState {
-    /// Holds the mapping from epic id's to `Epic`s
-    epics: HashMap<u32, Epic>,
-    /// A string representing the path to the database directory
-    db_dir: String,
-    /// A string representing the database file name e.g. db.txt
-    db_file_name: String,
-    /// A string representing the database epics directory
-    epic_dir: String,
-    /// A `PathBuf` of the absolute path to the database file
-    file_path: PathBuf,
-    /// For giving items a unique id
-    last_unique_id: u32,
-}
-
-impl AsyncDbState {
-    /// Associated method for creating a new `AsyncDbState`.
-    pub fn new(db_dir: String, db_file_name: String, epic_dir: String) -> AsyncDbState {
-        let mut file_path = PathBuf::from(db_dir.as_str());
-        file_path.push(db_file_name.as_str());
-        AsyncDbState {
-            epics: HashMap::new(),
-            db_dir,
-            db_file_name,
-            epic_dir,
-            file_path,
-            last_unique_id: 0,
-        }
-    }
-
-    /// Associated helper function. Handles reading a line of text from the db file.
-    fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
-        let (id_str, path_str) = match line.find(',') {
-            Some(idx) => (&line[..idx], &line[idx+1..]),
-            None => return Err(DbError::FileReadError(format!("unable to parse data base line: {}", line))),
-        };
-        let id = id_str.parse::<u32>()
-            .map_err(|_e| DbError::FileReadError(format!("unable to parse epic id: {}", id_str)))?;
-        let path = PathBuf::from(path_str);
-        Ok((id, path))
-    }
-
-    /// Associated method for loading a `AsyncDbState` from `db_dir`, `db_file_name` and `epic_dir`.
-    pub fn load(db_dir: String, db_file_name: String, epic_dir: String) -> Result<AsyncDbState, DbError> {
-        // Create file path
-        let mut root_path = PathBuf::from(db_dir.as_str());
-        root_path.push(db_file_name.as_str());
-
-        // Load file
-        let mut file = if let Ok(f) = std::fs::OpenOptions::new().read(true).open(root_path.clone()) {
-            BufReader::new(f)
-        } else {
-            return Err(DbError::FileLoadError(format!("unable to load file from {}, {}", db_dir.clone(), db_file_name.clone())));
-        };
-
-        let mut epics = HashMap::new();
-        let mut lines = file.lines();
-        let mut max_id = 0;
-
-        while let Some(line) = lines.next() {
-            let line = line.map_err(|e| DbError::FileReadError(db_file_name.clone()))?;
-            let (epic_id, epic_file_path) = AsyncDbState::parse_db_line(line)?;
-            let epic = Epic::load(epic_file_path, &mut max_id)?;
-            epics.insert(epic_id, epic);
-
-        }
-
-        Ok(AsyncDbState {
-            epics,
-            epic_dir,
-            db_dir,
-            db_file_name,
-            file_path: root_path,
-            last_unique_id: max_id,
-        })
-    }
-
-    /// Method for writing the contents of the `AsyncDbState` to its associated file. Will create a new
-    /// file if an associated db file has not been created, otherwise it will overwrite the
-    /// contents of the associated file.  Returns a `Result<(), DbError>`
-    /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
-    pub async fn write(&self) -> Result<(), DbError> {
-        let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new().write(true).truncate(true).create(true).open(&self.file_path).await {
-            async_std::io::BufWriter::new(f)
-        } else {
-            return Err(DbError::FileLoadError(format!("unable to open or create associated file: {:?}", self.file_path.to_str())))
-        };
-
-        for (id, epic) in &self.epics {
-            // TODO: make general for all operating systems
-            let epic_file_path_string = format!("{}/{}/epic{id}.txt", &self.db_dir, &self.epic_dir);
-            let line = format!("{},{}\n", id, epic_file_path_string);
-            println!("{}", line);
-            let line = line.into_bytes();
-            writer.write(line.as_slice())
-                .await
-                .map_err(
-                    |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
-            epic.write_async().await?;
-        }
-
-        writer.flush()
-            .await
-            .map_err(
-                |_| DbError::FileWriteError(format!("unable to flush buffer when writing to file: {}", self.db_file_name)))?;
-
-        Ok(())
-    }
-
-    /// Method to create a new `Epic` and add it to the `AsyncDbState`. Returns a `Result<(), DbError>,
-    /// The `Ok` variant if the `Epic` was added successfully, otherwise it returns the `Err` variant.
-    pub fn add_epic(&mut self, name: String, description: String) -> u32 {
-        self.last_unique_id += 1;
-        let id = self.last_unique_id;
-        let epic_fname = format!("epic{id}.txt");
-        let mut epic_pathname = PathBuf::from(&self.db_dir);
-        epic_pathname.push(self.epic_dir.clone());
-        epic_pathname.push(epic_fname);
-        self.epics.insert(id, Epic::new(id, name, description, Status::Open, epic_pathname, HashMap::new()));
-        self.last_unique_id
-    }
-
-    /// Method to check if an `Epic` with `epic_id` contains in the `AsyncDbState`.
-    pub fn contains_epic(&self, epic_id: u32) -> bool {
-        self.epics.contains_key(&epic_id)
-    }
-
-    /// Method to get an `&Epic` from the `AsyncDbState`. Returns an `Option`,
-    /// The `Some` variant if the `Epic` is contained in the database otherwise the `None` variant.
-    pub fn get_epic(&self, epic_id: u32) -> Option<&Epic> {
-        self.epics.get(&epic_id)
-    }
-
-    /// Method to get a `&mut Epic` from the `self`. Returns an `Option`, the `Some variant if the
-    /// `Epic` is contained in the database otherwise the `None` variant.
-    pub fn get_epic_mut(&mut self, epic_id: u32) -> Option<&mut Epic> {
-        self.epics.get_mut(&epic_id)
-    }
-
-    /// Method to delete an `Epic` from the database, note this method only logically deletes the `Epic`,
-    /// Since the `Epic`s are behind an `Arc` there may be other threads still reading or writing to the epic.
-    pub fn delete_epic(&mut self, epic_id: u32) -> Result<Epic, DbError> {
-        self.epics.remove(&epic_id)
-            .ok_or(DbError::DoesNotExist(format!("unable to delete epic with id: {}, epic not contained in database", epic_id)))
-    }
 
     /// Method to add a `Story` to an `Epic` contained in `self` with `epic_id`. The method can fail
     ///  if there is no `Epic` contained in `self` with `epic_id`.
-    pub async fn add_story(&mut self, epic_id: u32, story_name: String, story_description: String) -> Result<u32, DbError> {
+    pub async fn add_story_async(&mut self, epic_id: u32, story_name: String, story_description: String) -> Result<u32, DbError> {
         if let Some(epic) = self.epics.get_mut(&epic_id) {
             self.last_unique_id += 1;
             let new_story = Story::new(self.last_unique_id, story_name, story_description, Status::Open);
@@ -362,6 +243,181 @@ impl AsyncDbState {
         bytes
     }
 }
+
+// /// A top level asynchronous abstraction for the database. Handles all of the reads and writes to the data base.
+// /// Essentially an asynchronous version of `DbState`
+// #[derive(Debug, PartialEq)]
+// pub struct DbState {
+//     /// Holds the mapping from epic id's to `Epic`s
+//     epics: HashMap<u32, Epic>,
+//     /// A string representing the path to the database directory
+//     db_dir: String,
+//     /// A string representing the database file name e.g. db.txt
+//     db_file_name: String,
+//     /// A string representing the database epics directory
+//     epic_dir: String,
+//     /// A `PathBuf` of the absolute path to the database file
+//     file_path: PathBuf,
+//     /// For giving items a unique id
+//     last_unique_id: u32,
+// }
+//
+// impl DbState {
+//     /// Associated method for creating a new `DbState`.
+//     pub fn new(db_dir: String, db_file_name: String, epic_dir: String) -> DbState {
+//         let mut file_path = PathBuf::from(db_dir.as_str());
+//         file_path.push(db_file_name.as_str());
+//         DbState {
+//             epics: HashMap::new(),
+//             db_dir,
+//             db_file_name,
+//             epic_dir,
+//             file_path,
+//             last_unique_id: 0,
+//         }
+//     }
+//
+//     /// Associated helper function. Handles reading a line of text from the db file.
+//     fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
+//         let (id_str, path_str) = match line.find(',') {
+//             Some(idx) => (&line[..idx], &line[idx+1..]),
+//             None => return Err(DbError::FileReadError(format!("unable to parse data base line: {}", line))),
+//         };
+//         let id = id_str.parse::<u32>()
+//             .map_err(|_e| DbError::FileReadError(format!("unable to parse epic id: {}", id_str)))?;
+//         let path = PathBuf::from(path_str);
+//         Ok((id, path))
+//     }
+//
+//     /// Associated method for loading a `DbState` from `db_dir`, `db_file_name` and `epic_dir`.
+//     pub fn load(db_dir: String, db_file_name: String, epic_dir: String) -> Result<DbState, DbError> {
+//         // Create file path
+//         let mut root_path = PathBuf::from(db_dir.as_str());
+//         root_path.push(db_file_name.as_str());
+//
+//         // Load file
+//         let mut file = if let Ok(f) = std::fs::OpenOptions::new().read(true).open(root_path.clone()) {
+//             BufReader::new(f)
+//         } else {
+//             return Err(DbError::FileLoadError(format!("unable to load file from {}, {}", db_dir.clone(), db_file_name.clone())));
+//         };
+//
+//         let mut epics = HashMap::new();
+//         let mut lines = file.lines();
+//         let mut max_id = 0;
+//
+//         while let Some(line) = lines.next() {
+//             let line = line.map_err(|e| DbError::FileReadError(db_file_name.clone()))?;
+//             let (epic_id, epic_file_path) = DbState::parse_db_line(line)?;
+//             let epic = Epic::load(epic_file_path, &mut max_id)?;
+//             epics.insert(epic_id, epic);
+//
+//         }
+//
+//         Ok(DbState {
+//             epics,
+//             epic_dir,
+//             db_dir,
+//             db_file_name,
+//             file_path: root_path,
+//             last_unique_id: max_id,
+//         })
+//     }
+//
+//     /// Method for writing the contents of the `DbState` to its associated file. Will create a new
+//     /// file if an associated db file has not been created, otherwise it will overwrite the
+//     /// contents of the associated file.  Returns a `Result<(), DbError>`
+//     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
+//     pub async fn write(&self) -> Result<(), DbError> {
+//         let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new().write(true).truncate(true).create(true).open(&self.file_path).await {
+//             async_std::io::BufWriter::new(f)
+//         } else {
+//             return Err(DbError::FileLoadError(format!("unable to open or create associated file: {:?}", self.file_path.to_str())))
+//         };
+//
+//         for (id, epic) in &self.epics {
+//             // TODO: make general for all operating systems
+//             let epic_file_path_string = format!("{}/{}/epic{id}.txt", &self.db_dir, &self.epic_dir);
+//             let line = format!("{},{}\n", id, epic_file_path_string);
+//             println!("{}", line);
+//             let line = line.into_bytes();
+//             writer.write(line.as_slice())
+//                 .await
+//                 .map_err(
+//                     |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
+//             epic.write_async().await?;
+//         }
+//
+//         writer.flush()
+//             .await
+//             .map_err(
+//                 |_| DbError::FileWriteError(format!("unable to flush buffer when writing to file: {}", self.db_file_name)))?;
+//
+//         Ok(())
+//     }
+//
+//     /// Method to create a new `Epic` and add it to the `DbState`. Returns a `Result<(), DbError>,
+//     /// The `Ok` variant if the `Epic` was added successfully, otherwise it returns the `Err` variant.
+//     pub fn add_epic(&mut self, name: String, description: String) -> u32 {
+//         self.last_unique_id += 1;
+//         let id = self.last_unique_id;
+//         let epic_fname = format!("epic{id}.txt");
+//         let mut epic_pathname = PathBuf::from(&self.db_dir);
+//         epic_pathname.push(self.epic_dir.clone());
+//         epic_pathname.push(epic_fname);
+//         self.epics.insert(id, Epic::new(id, name, description, Status::Open, epic_pathname, HashMap::new()));
+//         self.last_unique_id
+//     }
+//
+//     /// Method to check if an `Epic` with `epic_id` contains in the `DbState`.
+//     pub fn contains_epic(&self, epic_id: u32) -> bool {
+//         self.epics.contains_key(&epic_id)
+//     }
+//
+//     /// Method to get an `&Epic` from the `DbState`. Returns an `Option`,
+//     /// The `Some` variant if the `Epic` is contained in the database otherwise the `None` variant.
+//     pub fn get_epic(&self, epic_id: u32) -> Option<&Epic> {
+//         self.epics.get(&epic_id)
+//     }
+//
+//     /// Method to get a `&mut Epic` from the `self`. Returns an `Option`, the `Some variant if the
+//     /// `Epic` is contained in the database otherwise the `None` variant.
+//     pub fn get_epic_mut(&mut self, epic_id: u32) -> Option<&mut Epic> {
+//         self.epics.get_mut(&epic_id)
+//     }
+//
+//     /// Method to delete an `Epic` from the database, note this method only logically deletes the `Epic`,
+//     /// Since the `Epic`s are behind an `Arc` there may be other threads still reading or writing to the epic.
+//     pub fn delete_epic(&mut self, epic_id: u32) -> Result<Epic, DbError> {
+//         self.epics.remove(&epic_id)
+//             .ok_or(DbError::DoesNotExist(format!("unable to delete epic with id: {}, epic not contained in database", epic_id)))
+//     }
+//
+//     /// Method to add a `Story` to an `Epic` contained in `self` with `epic_id`. The method can fail
+//     ///  if there is no `Epic` contained in `self` with `epic_id`.
+//     pub async fn add_story(&mut self, epic_id: u32, story_name: String, story_description: String) -> Result<u32, DbError> {
+//         if let Some(epic) = self.epics.get_mut(&epic_id) {
+//             self.last_unique_id += 1;
+//             let new_story = Story::new(self.last_unique_id, story_name, story_description, Status::Open);
+//             epic.add_story(new_story)?;
+//             epic.write_async().await?;
+//             Ok(self.last_unique_id)
+//         } else {
+//             Err(DbError::DoesNotExist(format!("epic with id: {} does not exist", epic_id)))
+//         }
+//     }
+//
+//     /// Returns a `Vec<u8>` of all the `Epics` currently in `self.epics`.
+//     pub fn as_bytes(&self) -> Vec<u8> {
+//         let mut bytes = vec![];
+//         for (_epic_id, epic) in &self.epics {
+//             bytes.extend_from_slice(&epic.encode());
+//             bytes.extend_from_slice(epic.name.as_bytes());
+//             bytes.extend_from_slice(epic.description.as_bytes());
+//         }
+//         bytes
+//     }
+// }
 
 /// A struct that encapsulates all pertinent information and behaviors for a single epic.
 #[derive(Debug, PartialEq)]
@@ -1268,7 +1324,7 @@ mod test {
 
     #[test]
     fn test_async_db_state_as_bytes() {
-        let mut db_state = AsyncDbState::new("".to_string(), "".to_string(), "".to_string());
+        let mut db_state = DbState::new("".to_string(), "".to_string(), "".to_string());
         let mut epic = Epic::new(
             129,
             "E129".to_string(),
@@ -1309,22 +1365,9 @@ mod test {
     }
 
     #[test]
-    fn test_create_new_async_db_state() {
-        let db_state = AsyncDbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
-            "test_async_db1.txt".to_string(),
-            "async_test_epics1".to_string()
-        );
-
-        println!("{:?}", db_state);
-
-        assert!(true);
-    }
-
-    #[test]
     fn test_async_db_state_read_and_write() {
         use async_std::task;
-        let mut db_state = AsyncDbState::new(
+        let mut db_state = DbState::new(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
             "test_async_db1.txt".to_string(),
             "async_test_epics1".to_string(),
@@ -1336,13 +1379,13 @@ mod test {
 
         println!("{:?}", db_state);
 
-        let handle = task::block_on(db_state.write());
+        let handle = task::block_on(db_state.write_async());
 
         println!("{:?}", handle);
 
         assert!(handle.is_ok());
 
-        let mut db_state_loaded_res = AsyncDbState::load(
+        let mut db_state_loaded_res = DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
             "test_async_db1.txt".to_string(),
             "async_test_epics1".to_string()
@@ -1356,7 +1399,7 @@ mod test {
     #[test]
     fn test_async_db_state_read_write_delete_epic() {
         use async_std::task;
-        let mut db_state = AsyncDbState::new(
+        let mut db_state = DbState::new(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
             "test_async_db2.txt".to_string(),
             "async_test_epics2".to_string(),
@@ -1369,13 +1412,13 @@ mod test {
 
         println!("{:?}", db_state);
 
-        let handle = task::block_on(db_state.write());
+        let handle = task::block_on(db_state.write_async());
 
         println!("{:?}", handle);
 
         assert!(handle.is_ok());
 
-        let mut db_state_loaded_res = AsyncDbState::load(
+        let mut db_state_loaded_res = DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
             "test_async_db2.txt".to_string(),
             "async_test_epics2".to_string()
@@ -1393,13 +1436,13 @@ mod test {
 
         println!("{:?}", db_state);
 
-        let handle = task::block_on(db_state.write());
+        let handle = task::block_on(db_state.write_async());
 
         println!("{:?}", handle);
 
         assert!(handle.is_ok());
 
-        let db_state_loaded_res = AsyncDbState::load(
+        let db_state_loaded_res = DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
             "test_async_db2.txt".to_string(),
             "async_test_epics2".to_string()
@@ -1415,7 +1458,7 @@ mod test {
     #[test]
     fn test_async_db_read_write_add_story() {
         use async_std::task;
-        let mut db_state = AsyncDbState::new(
+        let mut db_state = DbState::new(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
             "test_async_db3.txt".to_string(),
             "async_test_epics3".to_string(),
@@ -1430,7 +1473,7 @@ mod test {
 
         assert!(db_state.contains_epic(4));
 
-        let handle = task::block_on(db_state.add_story(4, "A simple test story".to_string(), "A simple test story decsription".to_string()));
+        let handle = task::block_on(db_state.add_story_async(4, "A simple test story".to_string(), "A simple test story decsription".to_string()));
 
         println!("{:?}", handle);
 
@@ -1438,9 +1481,9 @@ mod test {
 
         println!("{:?}", db_state);
 
-        assert!(task::block_on(db_state.write()).is_ok());
+        assert!(task::block_on(db_state.write_async()).is_ok());
 
-        let mut db_state_loaded_res = AsyncDbState::load(
+        let mut db_state_loaded_res = DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
             "test_async_db3.txt".to_string(),
             "async_test_epics3".to_string()
@@ -1467,14 +1510,14 @@ mod test {
 
         assert!(handle.is_ok());
 
-        let handle = task::block_on(db_state.write());
+        let handle = task::block_on(db_state.write_async());
 
         println!("{:?}", handle);
 
         assert!(handle.is_ok());
 
         // Ensure changes persist
-        let mut db_state_loaded_res = AsyncDbState::load(
+        let mut db_state_loaded_res = DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
             "test_async_db3.txt".to_string(),
             "async_test_epics3".to_string()
