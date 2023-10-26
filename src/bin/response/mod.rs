@@ -1,6 +1,6 @@
 //! Collection of Structs and functions for responses sent from the server to the client
 use crate::models::{BytesEncode, TagDecoding, TagEncoding};
-use crate::utils::parse_4_bytes;
+use crate::utils::{parse_4_bytes, AsBytes};
 
 pub mod prelude {
     pub use super::*;
@@ -59,9 +59,9 @@ pub enum Response {
     RequestNotParsed
 }
 
-impl Response {
+impl AsBytes for Response {
     /// Method that will convert a `Response` into an encoded vector of bytes.
-    pub fn as_bytes(&self) -> Vec<u8> {
+    fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         bytes.extend_from_slice(&self.encode());
         match self {

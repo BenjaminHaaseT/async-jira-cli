@@ -1,9 +1,8 @@
 //! Module that contains the structs that models the database.
 
 use std::collections::HashMap;
-use std::fs::{self, DirBuilder, ReadDir, File, OpenOptions};
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 // use std::ffi::{OsStr, OsString};
 
 #[cfg(target_os = "unix")]
@@ -20,6 +19,8 @@ use std::fmt::Formatter;
 use async_std::{
     prelude::*,
 };
+
+use crate::utils::AsBytes;
 
 pub mod prelude {
     pub use super::*;
@@ -231,9 +232,10 @@ impl DbState {
             Err(DbError::DoesNotExist(format!("epic with id: {} does not exist", epic_id)))
         }
     }
+}
 
-    /// Returns a `Vec<u8>` of all the `Epics` currently in `self.epics`.
-    pub fn as_bytes(&self) -> Vec<u8> {
+impl AsBytes for DbState {
+    fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         for (_epic_id, epic) in &self.epics {
             bytes.extend_from_slice(&epic.encode());
@@ -484,8 +486,17 @@ impl Epic {
         }
     }
 
-    /// Method for getting a byte representation of the current state of `self`. Useful for writing to a tcp stream.
-    pub fn as_bytes(&self) -> Vec<u8> {
+
+
+    /// Returns an `Option<&Story>`. If `self` contains a story with id `story_id` then the `Some` variant is returned,
+    /// otherwise the `None` variant is returned.
+    pub fn get_story(&self, story_id: u32) -> Option<&Story> {
+        self.stories.get(&story_id)
+    }
+}
+
+impl AsBytes for Epic {
+    fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         bytes.extend_from_slice(&self.encode());
         bytes.extend_from_slice(self.name.as_bytes());
@@ -496,12 +507,6 @@ impl Epic {
             bytes.extend_from_slice(story.description.as_bytes());
         }
         bytes
-    }
-
-    /// Returns an `Option<&Story>`. If `self` contains a story with id `story_id` then the `Some` variant is returned,
-    /// otherwise the `None` variant is returned.
-    pub fn get_story(&self, story_id: u32) -> Option<&Story> {
-        self.stories.get(&story_id)
     }
 }
 
@@ -576,8 +581,10 @@ impl Story {
             status,
         }
     }
-    /// Converts `self` into a representation in bytes. Useful for communicating via tcp.
-    pub fn as_bytes(&self) -> Vec<u8> {
+}
+
+impl AsBytes for Story {
+    fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         bytes.extend_from_slice(&self.encode());
         bytes.extend_from_slice(self.name.as_bytes());
@@ -585,6 +592,8 @@ impl Story {
         bytes
     }
 }
+
+
 
 unsafe impl Send for Story {}
 unsafe impl Sync for Story {}
@@ -700,6 +709,8 @@ impl std::fmt::Display for DbError {
         }
     }
 }
+
+impl std::error::Error for DbError {}
 
 /// The decoded tag type that both `Epic`s and `Story`s get decoded from. A tuple that represents
 /// the id of the object, the length (in bytes) of its name and description, and a byte that

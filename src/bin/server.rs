@@ -26,7 +26,7 @@ use std::thread::spawn;
 use models::prelude::*;
 use events::prelude::*;
 use response::prelude::*;
-use utils::Void;
+use utils::{Void, AsBytes};
 mod interface;
 
 
