@@ -127,7 +127,7 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Eve
 
 /// Takes `stream` and `client_receiver` and writes all responses received from the broker task to
 /// `stream`.
-async fn connection_write_loop(stream: Arc<TcpStream>, client_receiver: &mut Receiver<Response>, client_shutdown: UnboundedReceiver<Void>) -> Result<(), DbError> {
+async fn connection_write_loop(stream: Arc<TcpStream>, client_receiver: &mut Receiver<Response>, client_shutdown: UnboundedReceiver<Void>, peer_id: Uuid) -> Result<(), DbError> {
     let mut stream = &*stream;
     let mut client_receiver = client_receiver.fuse();
     let mut client_shutdown = client_shutdown.fuse();
@@ -137,7 +137,7 @@ async fn connection_write_loop(stream: Arc<TcpStream>, client_receiver: &mut Rec
                 Some(resp) => {
                     stream.write_all(resp.as_bytes().as_slice())
                             .await
-                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client")))?
+                            .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
                 }
                 None => break
             },
@@ -202,7 +202,7 @@ async fn broker(
                     let mut disconnect_sender = disconnect_sender.clone();
                     let _ = spawn_and_log_errors(
                         async move {
-                            let res = connection_write_loop(stream, &mut client_receiver, shutdown).await;
+                            let res = connection_write_loop(stream, &mut client_receiver, shutdown, peer_id).await;
                             let _ = disconnect_sender.send((peer_id, client_receiver)).await;
                             res
                         }
