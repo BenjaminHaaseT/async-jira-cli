@@ -1,6 +1,5 @@
 //! Collection of Structs and functions for responses sent from the server to the client
-use crate::models::{BytesEncode, TagDecoding, TagEncoding};
-use crate::utils::{parse_4_bytes, AsBytes};
+use crate::utils::{parse_4_bytes, AsBytes, BytesEncode, TagDecoding, TagEncoding};
 
 pub mod prelude {
     pub use super::*;

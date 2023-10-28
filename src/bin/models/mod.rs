@@ -1,9 +1,11 @@
-//! Module that contains the structs that models the database.
+//! Module that contains structs needed to model the database.
+//!
+//! The structs contained in this module implement methods for  performing common CRUD operations
+//! on the database.
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
-use std::ffi::{OsString, OsStr};
 
 #[cfg(target_os = "unix")]
 use std::os::ffi::{OsStrExt, OsStringExt};
@@ -20,13 +22,17 @@ use async_std::{
     prelude::*,
 };
 
-use crate::utils::AsBytes;
+use crate::utils::{AsBytes, BytesEncode, TagEncoding, TagDecoding};
 
 pub mod prelude {
     pub use super::*;
 }
 
-/// A top level abstraction for the database. Handles all of the reads and writes to the data base.
+/// A top level abstraction for the database, all reads and writes to/from the database
+/// are performed via the `DbState` struct in some way.
+///
+/// A `DbState` acts as the conduit for reading and writing to the database. It can therefore
+/// load an already existing database or be used to create a new one.
 #[derive(Debug, PartialEq)]
 pub struct DbState {
     /// Holds the mapping from epic id's to `Epic`s
@@ -45,6 +51,8 @@ pub struct DbState {
 
 impl DbState {
     /// Associated method for creating a new `DbState`.
+    ///
+    ///
     pub fn new(db_dir: String, db_file_name: String, epic_dir: String) -> DbState {
         let mut file_path = PathBuf::from(db_dir.as_str());
         file_path.push(db_file_name.as_str());
@@ -724,24 +732,6 @@ type EncodeTag = [u8; 13];
 
 impl TagEncoding for EncodeTag {}
 
-
-/// Marker trait for types that represent tag encodings
-pub trait TagEncoding {}
-
-/// Marker trait for types that represent tag decoding
-pub trait TagDecoding {}
-
-/// Provides an interface to types that can be serialized and deserialized as a stream of bytes
-pub trait BytesEncode {
-    /// The type of tag encoding for the implementing type
-    type Tag: TagEncoding;
-    /// The type that `Self::Tag` gets decoded into
-    type DecodedTag: TagDecoding;
-    /// Required: encodes the type into a `Self::Tag`
-    fn encode(&self) -> Self::Tag;
-    /// Required: decodes `Self::Tag` into a `Self::DecodedTag`
-    fn decode(tag: Self::Tag) -> Self::DecodedTag;
-}
 
 #[cfg(test)]
 mod test {
