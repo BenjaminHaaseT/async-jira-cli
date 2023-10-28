@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
-// use std::ffi::{OsStr, OsString};
+use std::ffi::{OsString, OsStr};
 
 #[cfg(target_os = "unix")]
 use std::os::ffi::{OsStrExt, OsStringExt};
@@ -61,26 +61,27 @@ impl DbState {
     /// Associated method for loading data already saved into a new `DbState`.
     pub fn load(db_dir: String, db_file_name: String, epic_dir: String) -> Result<DbState, DbError> {
         // Create file path
-        let mut root_path = PathBuf::from(db_dir.as_str());
-        root_path.push(db_file_name.as_str());
+        let mut root_path = PathBuf::from(db_dir.clone());
+        root_path.push(db_file_name.clone());
 
         // Load file
         let mut file = if let Ok(f) = OpenOptions::new().read(true).open(root_path.clone()) {
             BufReader::new(f)
         } else {
-            return Err(DbError::FileLoadError(format!("unable to load file from {}, {}", db_dir.clone(), db_file_name.clone())));
+            return Err(DbError::FileLoadError(format!("unable to load file from {}, {}", db_dir, db_file_name)));
         };
 
         let mut epics = HashMap::new();
         let mut lines = file.lines();
         let mut max_id = 0;
 
+        let db_file_name_clone = db_file_name.clone();
+
         while let Some(line) = lines.next() {
-            let line = line.map_err(|e| DbError::FileReadError(db_file_name.clone()))?;
+            let line = line.map_err(|_| DbError::FileReadError(format!("unable to read line from file: {}", db_file_name_clone)))?;
             let (epic_id, epic_file_path) = DbState::parse_db_line(line)?;
             let epic = Epic::load(epic_file_path, &mut max_id)?;
             epics.insert(epic_id, epic);
-
         }
 
         Ok(DbState {
@@ -105,9 +106,8 @@ impl DbState {
         };
 
         for (id, epic) in &self.epics {
-            // TODO: make general for all operating systems
-            let epic_file_path_string = format!("{}/{}/epic{id}.txt", &self.db_dir, &self.epic_dir);
-            let line = format!("{},{}\n", id, epic_file_path_string).into_bytes();
+            let epic_file_path_str = epic.file_path.to_str().ok_or(DbError::InvalidUtf8Path(format!("file path for epic: {} not valid utf8", id)))?;
+            let line = format!("{},{}\n", id, epic_file_path_str).into_bytes();
             writer.write(line.as_slice())
                 .map_err(
                     |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
@@ -129,21 +129,17 @@ impl DbState {
         };
 
         for (id, epic) in &self.epics {
-            // TODO: make general for all operating systems
-            let epic_file_path_string = format!("{}/{}/epic{id}.txt", &self.db_dir, &self.epic_dir);
-            let line = format!("{},{}\n", id, epic_file_path_string);
-            let line = line.into_bytes();
+            let epic_file_path_str = epic.file_path.to_str().ok_or(DbError::InvalidUtf8Path(format!("file path for epic: {} not valid utf8", id)))?;
+            let line = format!("{},{}\n", id, epic_file_path_str).into_bytes();
             writer.write(line.as_slice())
                 .await
-                .map_err(
-                    |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
+                .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
             epic.write_async().await?;
         }
 
         writer.flush()
             .await
-            .map_err(
-                |_| DbError::FileWriteError(format!("unable to flush buffer when writing to file: {}", self.db_file_name)))?;
+            .map_err(|_| DbError::FileWriteError(format!("unable to flush buffer when writing to file: {}", self.db_file_name)))?;
 
         Ok(())
     }
@@ -694,6 +690,7 @@ pub enum DbError {
     IdConflict(String),
     DoesNotExist(String),
     ConnectionError(String),
+    InvalidUtf8Path(String),
 }
 
 impl std::fmt::Display for DbError {
@@ -706,6 +703,7 @@ impl std::fmt::Display for DbError {
             DbError::IdConflict(s) => write!(f, "{}", s),
             DbError::DoesNotExist(s) => write!(f, "{}", s),
             DbError::ConnectionError(s) => write!(f, "{}", s),
+            DbError::InvalidUtf8Path(s) => write!(f, "{}", s),
         }
     }
 }
