@@ -1,33 +1,26 @@
 //! The binary that will run the server for the asynchronous database
-mod models;
-mod events;
-mod response;
-mod utils;
-
 
 use async_std::{
+    net::{TcpListener, TcpStream, ToSocketAddrs},
     prelude::*,
     task,
-    net::{TcpListener, ToSocketAddrs, TcpStream},
 };
 
 use futures::channel::mpsc::{self, Receiver, Sender, SendError, UnboundedReceiver};
 use futures::select;
 use futures::sink::SinkExt;
-use futures::{StreamExt, Stream, FutureExt};
+use futures::{FutureExt, Stream, StreamExt};
 use uuid::Uuid;
 
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::convert::TryFrom;
 use std::collections::HashMap;
-use std::thread::spawn;
 
-use models::prelude::*;
-use events::prelude::*;
-use response::prelude::*;
-use utils::{Void, AsBytes};
-mod interface;
+use async_jira_cli::models::prelude::*;
+use async_jira_cli::events::prelude::*;
+use async_jira_cli::utils::{AsBytes, Void};
+use async_jira_cli::response::prelude::*;
 
 
 /// Helper function that will take a future, spawn it as a new task and log any errors propagated from the spawned future.
@@ -88,7 +81,6 @@ async fn connection_loop(client_stream: TcpStream, mut broker_sender: Sender<Eve
     let client_stream = Arc::new(client_stream);
     let mut client_stream_reader = &*client_stream;
 
-    // TODO: set up the synchronization method signal to broker that a peer's connection has been dropped in this task
     let (_shutdown_sender, shutdown_receiver) = mpsc::unbounded::<Void>();
 
     // Create custom id for new client

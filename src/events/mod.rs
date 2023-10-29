@@ -6,9 +6,8 @@ use async_std::{
 };
 use futures::channel::mpsc::UnboundedReceiver;
 use uuid::Uuid;
-use crate::Void;
 use crate::models::{Status, DbError};
-use crate::utils::parse_4_bytes;
+use crate::utils::{parse_4_bytes, Void};
 
 pub mod prelude {
     pub use super::*;
