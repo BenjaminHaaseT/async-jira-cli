@@ -7,12 +7,6 @@ use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
-#[cfg(target_os = "unix")]
-use std::os::ffi::{OsStrExt, OsStringExt};
-
-#[cfg(target_os = "windows")]
-use std::os::ffi::{OsStrExt, OsStringExt};
-
 use std::error::Error;
 use std::io::{Seek, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
 use std::convert::{TryFrom, Into, AsRef};

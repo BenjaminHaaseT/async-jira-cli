@@ -25,14 +25,6 @@ pub fn parse_4_bytes(bytes: &[u8]) -> u32 {
     res
 }
 
-// /// The encoded tag type that both `Epic`s and `Story`s get encoded into. An array of bytes,
-// /// that holds the encoded id of the object, the length (in bytes) of the name and description of
-// /// the object and a status byte that represents the object's status.
-// type EncodeTag = [u8; 13];
-//
-// impl TagEncoding for EncodeTag {}
-
-
 /// Marker trait for types that represent tag encodings
 pub trait TagEncoding {}
 

@@ -79,8 +79,6 @@ async fn accept_loop(addrs: impl ToSocketAddrs + Debug + Clone, channel_buf_size
     Ok(())
 }
 
-
-
 /// Takes a `TcpStream` and a `Sender<Option<Event>>` representing the client connection and the sending
 /// end of a channel connected to a broker task. Attempts to read new events from the client stream and send them
 /// to the broker task. If a new event is successfully read from the client stream it is sent to the broker via `broker_sender`,
