@@ -1,7 +1,7 @@
 /target
 outline.txt
 todo.txt
-/test_database/*
+test_database/*
 /test_database/test_epics
 /test_databse/test_epics/*
 
