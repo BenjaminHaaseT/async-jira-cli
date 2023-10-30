@@ -1,5 +1,7 @@
 //! Collection of Structs and functions for responses sent from the server to the client
+use crate::models::DbError;
 use crate::utils::{parse_4_bytes, AsBytes, BytesEncode, TagDecoding, TagEncoding};
+use async_std::net::TcpStream;
 
 pub mod prelude {
     pub use super::*;
@@ -55,7 +57,32 @@ pub enum Response {
     StoryStatusUpdateOk(u32, u32, Vec<u8>),
 
     /// Response for any event that was unable to be parsed correctly
-    RequestNotParsed
+    RequestNotParsed,
+}
+
+impl Response {
+    pub async fn try_create(tag: [u8; 10], stream: &TcpStream) -> Result<Response, DbError> {
+        todo!()
+    }
+
+    fn encode_data_len(buf: &mut [u8; 18], data: &Vec<u8>) {
+        let data_len = data.len() as u64;
+        for i in 0..7 {
+            buf[i + 10] ^= ((data_len >> (i as u64 * 8)) & 0xff) as u8;
+        }
+    }
+
+    fn encode_epic_id(buf: &mut [u8; 18], epic_id: u32) {
+        for i in 2..6 {
+            buf[i] ^= ((epic_id >> (8 * (i as u32 - 2))) & 0xff) as u8;
+        }
+    }
+
+    fn encode_story_id(buf: &mut [u8; 18], story_id: u32) {
+        for i in 6..10 {
+            buf[i] ^= ((story_id >> (8 * ((i as u32 - 2) % 4))) & 0xff) as u8;
+        }
+    }
 }
 
 impl AsBytes for Response {
@@ -65,7 +92,7 @@ impl AsBytes for Response {
         bytes.extend_from_slice(&self.encode());
         match self {
             Response::ClientAddedOk(data) => bytes.extend_from_slice(data.as_slice()),
-            Response::ClientAlreadyExists => {},
+            Response::ClientAlreadyExists => {}
             Response::AddedEpicOk(_, data) => bytes.extend_from_slice(data.as_slice()),
             Response::DeletedEpicOk(_, data) => bytes.extend_from_slice(data.as_slice()),
             Response::GetEpicOk(data) => bytes.extend_from_slice(data.as_slice()),
@@ -82,11 +109,11 @@ impl AsBytes for Response {
     }
 }
 
-type ResponseEncodeTag = [u8; 10];
+type ResponseEncodeTag = [u8; 18];
 
 impl TagEncoding for ResponseEncodeTag {}
 
-type ResponseDecodeTag = (u16, u32, u32);
+type ResponseDecodeTag = (u16, u32, u32, u64);
 
 impl TagDecoding for ResponseDecodeTag {}
 
@@ -96,106 +123,133 @@ impl BytesEncode for Response {
     type DecodedTag = ResponseDecodeTag;
 
     fn encode(&self) -> Self::Tag {
-        let mut bytes = [0u8; 10];
+        let mut encoded_tag = [0u8; 18];
         match self {
-            Response::ClientAddedOk(_data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[1] ^= 1;
-                bytes
+            Response::ClientAddedOk(data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[1] ^= 1;
+                // let data_len = data.len() as u64;
+                // for i in 0..7 {
+                //     bytes[i + 10] ^= ((data_len >> (i as u64 * 8)) & 0xff) as u8;
+                // }
+                Response::encode_data_len(&mut encoded_tag, data);
+                encoded_tag
             }
             Response::ClientAlreadyExists => {
-                bytes[1] ^= (1 << 1);
-                bytes
+                encoded_tag[1] ^= (1 << 1);
+                encoded_tag
             }
-            Response::AddedEpicOk(epic_id,_data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[1] ^= (1 << 2);
-                for i in 2..6u32 {
-                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                }
-                bytes
+            Response::AddedEpicOk(epic_id, data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[1] ^= (1 << 2);
+                Response::encode_epic_id(&mut encoded_tag, *epic_id);
+                Response::encode_data_len(&mut encoded_tag, data);
+                // for i in 2..6u32 {
+                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                // }
+                encoded_tag
             }
-            Response::DeletedEpicOk(epic_id, _data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[1] ^= (1 << 3);
-                for i in 2..6u32 {
-                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) &0xff) as u8;
-                }
-                bytes
+            Response::DeletedEpicOk(epic_id, data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[1] ^= (1 << 3);
+                Response::encode_epic_id(&mut encoded_tag, *epic_id);
+                Response::encode_data_len(&mut encoded_tag, data);
+                // for i in 2..6u32 {
+                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                // }
+                encoded_tag
             }
-            Response::GetEpicOk(_data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[1] ^= (1 << 4);
-                bytes
+            Response::GetEpicOk(data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[1] ^= (1 << 4);
+                Response::encode_data_len(&mut encoded_tag, data);
+                encoded_tag
             }
-            Response::EpicStatusUpdateOk(epic_id, _data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[1] ^= (1 << 5);
-                for i in 2..6u32 {
-                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                }
-                bytes
+            Response::EpicStatusUpdateOk(epic_id, data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[1] ^= (1 << 5);
+                Response::encode_epic_id(&mut encoded_tag, *epic_id);
+                Response::encode_data_len(&mut encoded_tag, data);
+                // for i in 2..6u32 {
+                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                // }
+                encoded_tag
             }
-            Response::EpicDoesNotExist(epic_id, _data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[1] ^= (1 << 6);
-                for i in 2..6u32 {
-                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                }
-                bytes
+            Response::EpicDoesNotExist(epic_id, data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[1] ^= (1 << 6);
+                Response::encode_epic_id(&mut encoded_tag, *epic_id);
+                Response::encode_data_len(&mut encoded_tag, data);
+                // for i in 2..6u32 {
+                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                // }
+                encoded_tag
             }
-            Response::GetStoryOk(_data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[1] ^= (1 << 7);
-                bytes
+            Response::GetStoryOk(data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[1] ^= (1 << 7);
+                Response::encode_data_len(&mut encoded_tag, data);
+                encoded_tag
             }
-            Response::StoryDoesNotExist(epic_id, story_id,_data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[0] ^= 1;
-                for i in 2..6u32 {
-                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                }
-                for i in 6..10u32 {
-                    bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
-                }
-                bytes
+            Response::StoryDoesNotExist(epic_id, story_id, data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[0] ^= 1;
+                // for i in 2..6u32 {
+                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                // }
+                // for i in 6..10u32 {
+                //     bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
+                // }
+                Response::encode_epic_id(&mut encoded_tag, *epic_id);
+                Response::encode_story_id(&mut encoded_tag, *story_id);
+                Response::encode_data_len(&mut encoded_tag, data);
+                encoded_tag
             }
-            Response::AddedStoryOk(epic_id, story_id, _data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[0] ^= (1 << 1);
-                for i in 2..6u32 {
-                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                }
-                for i in 6..10u32 {
-                    bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
-                }
-                bytes
+            Response::AddedStoryOk(epic_id, story_id, data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[0] ^= (1 << 1);
+                // for i in 2..6u32 {
+                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                // }
+                // for i in 6..10u32 {
+                //     bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
+                // }
+                Response::encode_epic_id(&mut encoded_tag, *epic_id);
+                Response::encode_story_id(&mut encoded_tag, *story_id);
+                Response::encode_data_len(&mut encoded_tag, data);
+                encoded_tag
             }
-            Response::DeletedStoryOk(epic_id, story_id, _data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[0] ^= (1 << 2);
-                for i in 2..6u32 {
-                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                }
-                for i in 6..10u32 {
-                    bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
-                }
-                bytes
+            Response::DeletedStoryOk(epic_id, story_id, data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[0] ^= (1 << 2);
+                // for i in 2..6u32 {
+                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                // }
+                // for i in 6..10u32 {
+                //     bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
+                // }
+                Response::encode_epic_id(&mut encoded_tag, *epic_id);
+                Response::encode_story_id(&mut encoded_tag, *story_id);
+                Response::encode_data_len(&mut encoded_tag, data);
+                encoded_tag
             }
-            Response::StoryStatusUpdateOk(epic_id, story_id, _data) => {
-                bytes[0] ^= (1 << 7);
-                bytes[0] ^= (1 << 3);
-                for i in 2..6u32 {
-                    bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                }
-                for i in 6..10u32 {
-                    bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
-                }
-                bytes
+            Response::StoryStatusUpdateOk(epic_id, story_id, data) => {
+                encoded_tag[0] ^= (1 << 7);
+                encoded_tag[0] ^= (1 << 3);
+                // for i in 2..6u32 {
+                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
+                // }
+                // for i in 6..10u32 {
+                //     bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
+                // }
+                Response::encode_epic_id(&mut encoded_tag, *epic_id);
+                Response::encode_story_id(&mut encoded_tag, *story_id);
+                Response::encode_data_len(&mut encoded_tag, data);
+                encoded_tag
             }
             Response::RequestNotParsed => {
-                bytes[0] ^= (1 << 4);
-                bytes
+                encoded_tag[0] ^= (1 << 4);
+                encoded_tag
             }
         }
     }
@@ -204,23 +258,36 @@ impl BytesEncode for Response {
         let mut type_and_flag_bytes = 0u16;
         let mut epic_id = 0u32;
         let mut story_id = 0u32;
+        let mut data_len = 0u64;
         type_and_flag_bytes ^= (tag[0] as u16) << 8;
         type_and_flag_bytes ^= tag[1] as u16;
-        if type_and_flag_bytes & (1 << 2) != 0 || type_and_flag_bytes & (1 << 3) != 0
-            || type_and_flag_bytes & (1 << 5) != 0 || type_and_flag_bytes & (1 << 6) != 0
-            || type_and_flag_bytes & (1 << 8) != 0 || type_and_flag_bytes & (1 << 9) != 0
-            || type_and_flag_bytes & (1 << 10) != 0 || type_and_flag_bytes & (1 << 10) != 0
+        if type_and_flag_bytes & (1 << 2) != 0
+            || type_and_flag_bytes & (1 << 3) != 0
+            || type_and_flag_bytes & (1 << 5) != 0
+            || type_and_flag_bytes & (1 << 6) != 0
+            || type_and_flag_bytes & (1 << 8) != 0
+            || type_and_flag_bytes & (1 << 9) != 0
+            || type_and_flag_bytes & (1 << 10) != 0
+            || type_and_flag_bytes & (1 << 10) != 0
             || type_and_flag_bytes & (1 << 11) != 0
         {
             epic_id = parse_4_bytes(&tag[2..6]);
-            if type_and_flag_bytes & (1 << 8) != 0 || type_and_flag_bytes & (1 << 9) != 0
-                || type_and_flag_bytes & (1 << 10) != 0 || type_and_flag_bytes & (1 << 11) != 0
+            if type_and_flag_bytes & (1 << 8) != 0
+                || type_and_flag_bytes & (1 << 9) != 0
+                || type_and_flag_bytes & (1 << 10) != 0
+                || type_and_flag_bytes & (1 << 11) != 0
             {
-                story_id = parse_4_bytes(&tag[6..]);
+                story_id = parse_4_bytes(&tag[6..10]);
             }
         }
-        (type_and_flag_bytes, epic_id, story_id)
+        if type_and_flag_bytes & (1 << 15) != 0 {
+            for i in 0..8 {
+                data_len ^= (tag[i + 10] as u64) << ((i as u64) * 8);
+            }
+        }
+        (type_and_flag_bytes, epic_id, story_id, data_len)
     }
+
 }
 
 #[cfg(test)]
@@ -229,179 +296,177 @@ mod test {
 
     #[test]
     fn test_response_encode() {
-        let response = Response::ClientAddedOk(vec![]);
+        let response = Response::ClientAddedOk(vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [128, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 1, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
         let response = Response::ClientAlreadyExists;
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [0, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::AddedEpicOk(2353, vec![]);
+        let response = Response::AddedEpicOk(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [128, 4, 49, 9, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 4, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::DeletedEpicOk(2353, vec![]);
+        let response = Response::DeletedEpicOk(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [128, 8, 49, 9, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 8, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::GetEpicOk(vec![]);
+        let response = Response::GetEpicOk(vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::EpicStatusUpdateOk(2353, vec![]);
+        let response = Response::EpicStatusUpdateOk(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [128, 32, 49, 9, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 32, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::EpicDoesNotExist(2353, vec![]);
+        let response = Response::EpicDoesNotExist(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::GetStoryOk(vec![]);
+        let response = Response::GetStoryOk(vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::StoryDoesNotExist(2353, 4798, vec![]);
+        let response = Response::StoryDoesNotExist(2353, 4798, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [129, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        assert_eq!(encoding, [129, 0, 49, 9, 0, 0, 190, 18, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::AddedStoryOk(2353, 4798, vec![]);
+        let response = Response::AddedStoryOk(2353, 4798, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [130, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        assert_eq!(encoding, [130, 0, 49, 9, 0, 0, 190, 18, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::DeletedStoryOk(2353, 4798, vec![]);
+        let response = Response::DeletedStoryOk(2353, 4798, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        assert_eq!(encoding, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::StoryStatusUpdateOk(2353, 4798, vec![]);
+        let response = Response::StoryStatusUpdateOk(2353, 4798, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [136, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        assert_eq!(encoding, [136, 0, 49, 9, 0, 0, 190, 18, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
         let response = Response::RequestNotParsed;
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [16, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]
     fn test_response_decode() {
         let response = Response::ClientAddedOk(vec![]);
         let encoding = response.encode();
-        assert_eq!(encoding, [128, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (32769, 0, 0));
+        assert_eq!(decoding, (32769, 0, 0, 0));
         println!("{:016b}", decoding.0);
 
         let response = Response::ClientAlreadyExists;
         let encoding = response.encode();
-        assert_eq!(encoding, [0, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (2, 0, 0));
+        assert_eq!(decoding, (2, 0, 0, 0));
         println!("{:016b}", decoding.0);
 
-
-        let response = Response::AddedEpicOk(2353, vec![]);
+        let response = Response::AddedEpicOk(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [128, 4, 49, 9, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 4, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (32772, 2353, 0));
+        assert_eq!(decoding, (32772, 2353, 0, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::DeletedEpicOk(2353, vec![]);
+        let response = Response::DeletedEpicOk(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [128, 8, 49, 9, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 8, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (32776, 2353, 0));
+        assert_eq!(decoding, (32776, 2353, 0, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::GetEpicOk(vec![]);
+        let response = Response::GetEpicOk(vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (32784, 0, 0));
+        assert_eq!(decoding, (32784, 0, 0, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::EpicStatusUpdateOk(2353, vec![]);
+        let response = Response::EpicStatusUpdateOk(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [128, 32, 49, 9, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 32, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (32800, 2353, 0));
+        assert_eq!(decoding, (32800, 2353, 0, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::EpicDoesNotExist(2353, vec![]);
+        let response = Response::EpicDoesNotExist(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (32832, 2353, 0));
+        assert_eq!(decoding, (32832, 2353, 0, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::GetStoryOk(vec![]);
+        let response = Response::GetStoryOk(vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (32896, 0, 0));
+        assert_eq!(decoding, (32896, 0, 0, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::StoryDoesNotExist(2353, 4798, vec![]);
+        let response = Response::StoryDoesNotExist(2353, 4798, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [129, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        assert_eq!(encoding, [129, 0, 49, 9, 0, 0, 190, 18, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (33024, 2353, 4798));
+        assert_eq!(decoding, (33024, 2353, 4798, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::AddedStoryOk(2353, 4798, vec![]);
+        let response = Response::AddedStoryOk(2353, 4798, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [130, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        assert_eq!(encoding, [130, 0, 49, 9, 0, 0, 190, 18, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (33280, 2353, 4798));
+        assert_eq!(decoding, (33280, 2353, 4798, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::DeletedStoryOk(2353, 4798, vec![]);
+        let response = Response::DeletedStoryOk(2353, 4798, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        assert_eq!(encoding, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (33792, 2353, 4798));
+        assert_eq!(decoding, (33792, 2353, 4798, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::StoryStatusUpdateOk(2353, 4798, vec![]);
+        let response = Response::StoryStatusUpdateOk(2353, 4798, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [136, 0, 49, 9, 0, 0, 190, 18, 0, 0]);
+        assert_eq!(encoding, [136, 0, 49, 9, 0, 0, 190, 18, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (34816, 2353, 4798));
+        assert_eq!(decoding, (34816, 2353, 4798, 5));
         println!("{:016b}", decoding.0);
-
 
         let response = Response::RequestNotParsed;
         let encoding = response.encode();
-        assert_eq!(encoding, [16, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (4096, 0, 0));
+        assert_eq!(decoding, (4096, 0, 0, 0));
         println!("{:016b}", decoding.0);
     }
 
@@ -410,66 +475,66 @@ mod test {
         let response = Response::ClientAddedOk(vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, vec![128, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, vec![128, 1, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::ClientAlreadyExists;
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, vec![0, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(bytes, vec![0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,]);
 
         let response = Response::AddedEpicOk(2353, vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, vec![128, 4, 49, 9, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, vec![128, 4, 49, 9, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::DeletedEpicOk(2353, vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, vec![128, 8, 49, 9, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, vec![128, 8, 49, 9, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::GetEpicOk(vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::EpicStatusUpdateOk(2353, vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [128, 32, 49, 9, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, [128, 32, 49, 9, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::EpicDoesNotExist(2353, vec![1, 2, 3, 4]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4]);
+        assert_eq!(bytes, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4]);
 
-        let response = Response::GetStoryOk(vec![1, 2, 3,]);
+        let response = Response::GetStoryOk(vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::StoryDoesNotExist(2353, 4798, vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [129, 0, 49, 9, 0, 0, 190, 18, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, [129, 0, 49, 9, 0, 0, 190, 18, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::AddedStoryOk(2353, 4798, vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [130, 0, 49, 9, 0, 0, 190, 18, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, [130, 0, 49, 9, 0, 0, 190, 18, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::DeletedStoryOk(2353, 4798, vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, [132, 0, 49, 9, 0, 0, 190, 18, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::StoryStatusUpdateOk(2353, 4798, vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [136, 0, 49, 9, 0, 0, 190, 18, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, [136, 0, 49, 9, 0, 0, 190, 18, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::RequestNotParsed;
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [16, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(bytes, [16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,]);
     }
 }

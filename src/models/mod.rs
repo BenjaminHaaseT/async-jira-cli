@@ -7,16 +7,14 @@ use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
-use std::error::Error;
-use std::io::{Seek, Read, Write, BufRead, BufReader, BufWriter, ErrorKind};
-use std::convert::{TryFrom, Into, AsRef};
+use async_std::prelude::*;
 use std::cmp::PartialEq;
+use std::convert::{AsRef, Into, TryFrom};
+use std::error::Error;
 use std::fmt::Formatter;
-use async_std::{
-    prelude::*,
-};
+use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Seek, Write};
 
-use crate::utils::{AsBytes, BytesEncode, TagEncoding, TagDecoding};
+use crate::utils::{AsBytes, BytesEncode, TagDecoding, TagEncoding};
 
 pub mod prelude {
     pub use super::*;
@@ -61,7 +59,11 @@ impl DbState {
     }
 
     /// Associated method for loading data already saved into a new `DbState`.
-    pub fn load(db_dir: String, db_file_name: String, epic_dir: String) -> Result<DbState, DbError> {
+    pub fn load(
+        db_dir: String,
+        db_file_name: String,
+        epic_dir: String,
+    ) -> Result<DbState, DbError> {
         // Create file path
         let mut root_path = PathBuf::from(db_dir.clone());
         root_path.push(db_file_name.clone());
@@ -70,7 +72,10 @@ impl DbState {
         let mut file = if let Ok(f) = OpenOptions::new().read(true).open(root_path.clone()) {
             BufReader::new(f)
         } else {
-            return Err(DbError::FileLoadError(format!("unable to load file from {}, {}", db_dir, db_file_name)));
+            return Err(DbError::FileLoadError(format!(
+                "unable to load file from {}, {}",
+                db_dir, db_file_name
+            )));
         };
 
         let mut epics = HashMap::new();
@@ -80,7 +85,12 @@ impl DbState {
         let db_file_name_clone = db_file_name.clone();
 
         while let Some(line) = lines.next() {
-            let line = line.map_err(|_| DbError::FileReadError(format!("unable to read line from file: {}", db_file_name_clone)))?;
+            let line = line.map_err(|_| {
+                DbError::FileReadError(format!(
+                    "unable to read line from file: {}",
+                    db_file_name_clone
+                ))
+            })?;
             let (epic_id, epic_file_path) = DbState::parse_db_line(line)?;
             let epic = Epic::load(epic_file_path, &mut max_id)?;
             epics.insert(epic_id, epic);
@@ -101,18 +111,35 @@ impl DbState {
     /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
     pub fn write(&self) -> Result<(), DbError> {
-        let mut writer = if let Ok(f) = OpenOptions::new().write(true).truncate(true).create(true).open(&self.file_path) {
+        let mut writer = if let Ok(f) = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(&self.file_path)
+        {
             BufWriter::new(f)
         } else {
-            return Err(DbError::FileLoadError(format!("unable to open/create associated file: {:?}", self.file_path.to_str())))
+            return Err(DbError::FileLoadError(format!(
+                "unable to open/create associated file: {:?}",
+                self.file_path.to_str()
+            )));
         };
 
         for (id, epic) in &self.epics {
-            let epic_file_path_str = epic.file_path.to_str().ok_or(DbError::InvalidUtf8Path(format!("file path for epic: {} not valid utf8", id)))?;
+            let epic_file_path_str =
+                epic.file_path
+                    .to_str()
+                    .ok_or(DbError::InvalidUtf8Path(format!(
+                        "file path for epic: {} not valid utf8",
+                        id
+                    )))?;
             let line = format!("{},{}\n", id, epic_file_path_str).into_bytes();
-            writer.write(line.as_slice())
-                .map_err(
-                    |_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
+            writer.write(line.as_slice()).map_err(|_e| {
+                DbError::FileWriteError(format!(
+                    "unable to write epic: {id} info to file: {}",
+                    self.db_file_name
+                ))
+            })?;
             epic.write()?;
         }
 
@@ -124,24 +151,45 @@ impl DbState {
     /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
     pub async fn write_async(&self) -> Result<(), DbError> {
-        let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new().write(true).truncate(true).create(true).open(&self.file_path).await {
+        let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(&self.file_path)
+            .await
+        {
             async_std::io::BufWriter::new(f)
         } else {
-            return Err(DbError::FileLoadError(format!("unable to open or create associated file: {:?}", self.file_path.to_str())))
+            return Err(DbError::FileLoadError(format!(
+                "unable to open or create associated file: {:?}",
+                self.file_path.to_str()
+            )));
         };
 
         for (id, epic) in &self.epics {
-            let epic_file_path_str = epic.file_path.to_str().ok_or(DbError::InvalidUtf8Path(format!("file path for epic: {} not valid utf8", id)))?;
+            let epic_file_path_str =
+                epic.file_path
+                    .to_str()
+                    .ok_or(DbError::InvalidUtf8Path(format!(
+                        "file path for epic: {} not valid utf8",
+                        id
+                    )))?;
             let line = format!("{},{}\n", id, epic_file_path_str).into_bytes();
-            writer.write(line.as_slice())
-                .await
-                .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {id} info to file: {}", self.db_file_name)))?;
+            writer.write(line.as_slice()).await.map_err(|_e| {
+                DbError::FileWriteError(format!(
+                    "unable to write epic: {id} info to file: {}",
+                    self.db_file_name
+                ))
+            })?;
             epic.write_async().await?;
         }
 
-        writer.flush()
-            .await
-            .map_err(|_| DbError::FileWriteError(format!("unable to flush buffer when writing to file: {}", self.db_file_name)))?;
+        writer.flush().await.map_err(|_| {
+            DbError::FileWriteError(format!(
+                "unable to flush buffer when writing to file: {}",
+                self.db_file_name
+            ))
+        })?;
 
         Ok(())
     }
@@ -149,16 +197,24 @@ impl DbState {
     /// Removes an epic with `id` from the `DbState`. Returns a `Result<Epic, DbError>`,
     /// the `Ok` variant if the delete was successful, otherwise the `Err` variant.
     pub fn delete_epic(&mut self, id: u32) -> Result<Epic, DbError> {
-        self.epics.remove(&id).ok_or(DbError::DoesNotExist(format!("no epic with id: {id}")))
+        self.epics
+            .remove(&id)
+            .ok_or(DbError::DoesNotExist(format!("no epic with id: {id}")))
     }
 
     /// Associated helper function. Handles reading a line of text from the db file.
     fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
         let (id_str, path_str) = match line.find(',') {
-            Some(idx) => (&line[..idx], &line[idx+1..]),
-            None => return Err(DbError::FileReadError(format!("unable to parse data base line: {}", line))),
+            Some(idx) => (&line[..idx], &line[idx + 1..]),
+            None => {
+                return Err(DbError::FileReadError(format!(
+                    "unable to parse data base line: {}",
+                    line
+                )))
+            }
         };
-        let id = id_str.parse::<u32>()
+        let id = id_str
+            .parse::<u32>()
             .map_err(|_e| DbError::FileReadError(format!("unable to parse epic id: {}", id_str)))?;
         let path = PathBuf::from(path_str);
         Ok((id, path))
@@ -173,7 +229,17 @@ impl DbState {
         let mut epic_pathname = PathBuf::from(&self.db_dir);
         epic_pathname.push(self.epic_dir.clone());
         epic_pathname.push(epic_fname);
-        self.epics.insert(id, Epic::new(id, name, description, Status::Open, epic_pathname, HashMap::new()));
+        self.epics.insert(
+            id,
+            Epic::new(
+                id,
+                name,
+                description,
+                Status::Open,
+                epic_pathname,
+                HashMap::new(),
+            ),
+        );
         self.last_unique_id
     }
 
@@ -196,12 +262,24 @@ impl DbState {
 
     /// Method for adding a new story to `Epic` with `epic_id`. Returns a `Result<(), DbError>`,
     /// The `Ok` variant if `Story` was successfully added otherwise the `Err` variant.
-    pub fn add_story(&mut self, epic_id: u32, story_name: String, story_description: String) -> Result<(), DbError> {
+    pub fn add_story(
+        &mut self,
+        epic_id: u32,
+        story_name: String,
+        story_description: String,
+    ) -> Result<(), DbError> {
         if !self.epics.contains_key(&epic_id) {
-            return Err(DbError::DoesNotExist("no epic with id: {epic_id}".to_string()));
+            return Err(DbError::DoesNotExist(
+                "no epic with id: {epic_id}".to_string(),
+            ));
         }
         self.last_unique_id += 1;
-        let new_story = Story::new(self.last_unique_id, story_name, story_description, Status::Open);
+        let new_story = Story::new(
+            self.last_unique_id,
+            story_name,
+            story_description,
+            Status::Open,
+        );
         self.epics.get_mut(&epic_id).unwrap().add_story(new_story)
     }
 
@@ -209,25 +287,41 @@ impl DbState {
     /// the `Ok` variant if the `Story` was successfully deleted, otherwise the `Err` variant.
     pub fn delete_story(&mut self, epic_id: u32, story_id: u32) -> Result<u32, DbError> {
         if !self.epics.contains_key(&epic_id) {
-            return Err(DbError::DoesNotExist(format!("unable to delete story, no epic with id: {}", epic_id)));
+            return Err(DbError::DoesNotExist(format!(
+                "unable to delete story, no epic with id: {}",
+                epic_id
+            )));
         }
         match self.epics.get_mut(&epic_id).unwrap().delete_story(story_id) {
             Ok(_) => Ok(story_id),
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
     /// Method to add a `Story` to an `Epic` contained in `self` with `epic_id`. The method can fail
     ///  if there is no `Epic` contained in `self` with `epic_id`.
-    pub async fn add_story_async(&mut self, epic_id: u32, story_name: String, story_description: String) -> Result<u32, DbError> {
+    pub async fn add_story_async(
+        &mut self,
+        epic_id: u32,
+        story_name: String,
+        story_description: String,
+    ) -> Result<u32, DbError> {
         if let Some(epic) = self.epics.get_mut(&epic_id) {
             self.last_unique_id += 1;
-            let new_story = Story::new(self.last_unique_id, story_name, story_description, Status::Open);
+            let new_story = Story::new(
+                self.last_unique_id,
+                story_name,
+                story_description,
+                Status::Open,
+            );
             epic.add_story(new_story)?;
             epic.write_async().await?;
             Ok(self.last_unique_id)
         } else {
-            Err(DbError::DoesNotExist(format!("epic with id: {} does not exist", epic_id)))
+            Err(DbError::DoesNotExist(format!(
+                "epic with id: {} does not exist",
+                epic_id
+            )))
         }
     }
 }
@@ -258,12 +352,19 @@ pub struct Epic {
     /// The file path the current epic is located in
     file_path: PathBuf,
     /// The mapping from unique story id's to the stories contained in the particular `Epic`
-    stories: HashMap<u32, Story>
+    stories: HashMap<u32, Story>,
 }
 
 impl Epic {
     /// Associated method for creating a new `Epic` from `id`, `name`, `description`, `status`, `file_path` and `stories`.
-    pub fn new(id: u32, name: String, description: String, status: Status, file_path: PathBuf, stories: HashMap<u32, Story>) -> Epic {
+    pub fn new(
+        id: u32,
+        name: String,
+        description: String,
+        status: Status,
+        file_path: PathBuf,
+        stories: HashMap<u32, Story>,
+    ) -> Epic {
         Epic {
             id,
             name,
@@ -281,13 +382,17 @@ impl Epic {
         let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path.clone()) {
             BufReader::new(f)
         } else {
-            return Err(DbError::FileLoadError(format!("unable to load file {:?}", path.to_str())))
+            return Err(DbError::FileLoadError(format!(
+                "unable to load file {:?}",
+                path.to_str()
+            )));
         };
 
         // Read the bytes for the epic tag
         let mut epic_tag = [0_u8; 13];
-        file.read_exact(&mut epic_tag)
-            .map_err(|_e| DbError::FileReadError(format!("unable to read file {:?}", path.to_str())))?;
+        file.read_exact(&mut epic_tag).map_err(|_e| {
+            DbError::FileReadError(format!("unable to read file {:?}", path.to_str()))
+        })?;
 
         // Extract data from epic tag
         let (id, name_len, description_len, status_byte) = <Epic as BytesEncode>::decode(epic_tag);
@@ -299,9 +404,19 @@ impl Epic {
 
         // Read the bytes from the file
         file.read_exact(epic_name_bytes.as_mut_slice())
-            .map_err(|_e| DbError::FileReadError(format!("unable to read epic: {id} name from file {:?}", path.to_str())))?;
+            .map_err(|_e| {
+                DbError::FileReadError(format!(
+                    "unable to read epic: {id} name from file {:?}",
+                    path.to_str()
+                ))
+            })?;
         file.read_exact(epic_description_bytes.as_mut_slice())
-            .map_err(|_e| DbError::FileReadError(format!("unable to read epic: {id} description from file {:?}", path.to_str())))?;
+            .map_err(|_e| {
+                DbError::FileReadError(format!(
+                    "unable to read epic: {id} description from file {:?}",
+                    path.to_str()
+                ))
+            })?;
         // file.read_exact(epic_file_path_bytes.as_mut_slice())
         //     .map_err(|_e| DbError::FileReadError(format!("unable to read epic: {id} file path from file {:?}", path.as_str())))?;
 
@@ -324,26 +439,42 @@ impl Epic {
             if let Err(e) = file.read_exact(&mut cur_story_tag) {
                 match e.kind() {
                     ErrorKind::UnexpectedEof => break,
-                    _ => return Err(DbError::FileReadError(format!("unable to read stories from {:?}", path.to_str()))),
+                    _ => {
+                        return Err(DbError::FileReadError(format!(
+                            "unable to read stories from {:?}",
+                            path.to_str()
+                        )))
+                    }
                 }
             }
 
             // Decode story tag and read bytes from file, propagate errors when they occur
-            let (story_id, story_name_len, story_description_len, story_status_byte) = <Story as BytesEncode>::decode(cur_story_tag);
+            let (story_id, story_name_len, story_description_len, story_status_byte) =
+                <Story as BytesEncode>::decode(cur_story_tag);
             let mut story_name_bytes = vec![0_u8; story_name_len as usize];
             let mut story_description_bytes = vec![0_u8; story_description_len as usize];
 
             file.read_exact(story_name_bytes.as_mut_slice())
-                .map_err(|_e| DbError::FileReadError(format!("unable to read story: {id} name from file")))?;
+                .map_err(|_e| {
+                    DbError::FileReadError(format!("unable to read story: {id} name from file"))
+                })?;
 
             file.read_exact(story_description_bytes.as_mut_slice())
-                .map_err(|_e| DbError::FileReadError(format!("unable to read story: {id} description from file")))?;
+                .map_err(|_e| {
+                    DbError::FileReadError(format!(
+                        "unable to read story: {id} description from file"
+                    ))
+                })?;
 
-            let story_name = String::from_utf8(story_name_bytes)
-                .map_err(|_e| DbError::ParseError(format!("unable to parse story: {id} name as valid string")))?;
+            let story_name = String::from_utf8(story_name_bytes).map_err(|_e| {
+                DbError::ParseError(format!("unable to parse story: {id} name as valid string"))
+            })?;
 
-            let story_description = String::from_utf8(story_description_bytes)
-                .map_err(|_e| DbError::ParseError(format!("unable to parse story: {id} description as valid string")))?;
+            let story_description = String::from_utf8(story_description_bytes).map_err(|_e| {
+                DbError::ParseError(format!(
+                    "unable to parse story: {id} description as valid string"
+                ))
+            })?;
 
             // Insert parsed story into hashmap
             let story_status = Status::try_from(story_status_byte)?;
@@ -356,14 +487,7 @@ impl Epic {
 
         // Create the Epic and return the result
         let epic_status = Status::try_from(status_byte)?;
-        let epic = Epic::new(
-            id,
-            epic_name,
-            epic_description,
-            epic_status,
-            path,
-            stories
-        );
+        let epic = Epic::new(id, epic_name, epic_description, epic_status, path, stories);
         *max_id = u32::max(id, *max_id);
         Ok(epic)
     }
@@ -372,30 +496,57 @@ impl Epic {
     /// file does not exist.
     pub fn write(&self) -> Result<(), DbError> {
         // Attempt to open file
-        let mut writer = if let Ok(f) = OpenOptions::new().write(true).create(true).truncate(true).open::<&Path>(self.file_path.as_ref()) {
+        let mut writer = if let Ok(f) = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open::<&Path>(self.file_path.as_ref())
+        {
             BufWriter::new(f)
         } else {
-            return Err(DbError::FileLoadError(format!("unable to open file: {:?}", self.file_path.to_str())));
+            return Err(DbError::FileLoadError(format!(
+                "unable to open file: {:?}",
+                self.file_path.to_str()
+            )));
         };
 
         // Encode the tag of `self` and write epic data to file
         let epic_tag = self.encode();
-        writer.write_all(&epic_tag)
-            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id)))?;
-        writer.write_all(self.name.as_bytes())
-            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} name to file", self.id)))?;
-        writer.write_all(self.description.as_bytes())
-            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} description to file", self.id)))?;
+        writer.write_all(&epic_tag).map_err(|_e| {
+            DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id))
+        })?;
+        writer.write_all(self.name.as_bytes()).map_err(|_e| {
+            DbError::FileWriteError(format!("unable to write epic: {} name to file", self.id))
+        })?;
+        writer
+            .write_all(self.description.as_bytes())
+            .map_err(|_e| {
+                DbError::FileWriteError(format!(
+                    "unable to write epic: {} description to file",
+                    self.id
+                ))
+            })?;
 
         // Now write stories to file
         for (story_id, story) in &self.stories {
             let story_tag = story.encode();
-            writer.write_all(&story_tag)
-                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} tag to file", *story_id)))?;
-            writer.write_all(story.name.as_bytes())
-                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} name to file", story.name.as_str())))?;
-            writer.write_all(story.description.as_bytes())
-                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} description to file", story.description.as_str())))?;
+            writer.write_all(&story_tag).map_err(|_e| {
+                DbError::FileWriteError(format!("unable to write story: {} tag to file", *story_id))
+            })?;
+            writer.write_all(story.name.as_bytes()).map_err(|_e| {
+                DbError::FileWriteError(format!(
+                    "unable to write story: {} name to file",
+                    story.name.as_str()
+                ))
+            })?;
+            writer
+                .write_all(story.description.as_bytes())
+                .map_err(|_e| {
+                    DbError::FileWriteError(format!(
+                        "unable to write story: {} description to file",
+                        story.description.as_str()
+                    ))
+                })?;
         }
 
         Ok(())
@@ -407,41 +558,67 @@ impl Epic {
             .write(true)
             .create(true)
             .truncate(true)
-            .open::<&Path>(self.file_path.as_ref()).await {
+            .open::<&Path>(self.file_path.as_ref())
+            .await
+        {
             async_std::io::BufWriter::new(f)
         } else {
-            return Err(DbError::FileLoadError(format!("unable to open file: {:?}", self.file_path.to_str())))
+            return Err(DbError::FileLoadError(format!(
+                "unable to open file: {:?}",
+                self.file_path.to_str()
+            )));
         };
 
         // Encode the tag of `self` and write epic data to file
         let epic_tag = self.encode();
-        writer.write_all(&epic_tag)
+        writer.write_all(&epic_tag).await.map_err(|_e| {
+            DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id))
+        })?;
+        writer.write_all(self.name.as_bytes()).await.map_err(|_e| {
+            DbError::FileWriteError(format!("unable to write epic: {} name to file", self.id))
+        })?;
+        writer
+            .write_all(self.description.as_bytes())
             .await
-            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id)))?;
-        writer.write_all(self.name.as_bytes())
-            .await
-            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} name to file", self.id)))?;
-        writer.write_all(self.description.as_bytes())
-            .await
-            .map_err(|_e| DbError::FileWriteError(format!("unable to write epic: {} description to file", self.id)))?;
+            .map_err(|_e| {
+                DbError::FileWriteError(format!(
+                    "unable to write epic: {} description to file",
+                    self.id
+                ))
+            })?;
 
         // Now write stories to file
         for (story_id, story) in &self.stories {
             let story_tag = story.encode();
-            writer.write_all(&story_tag)
+            writer.write_all(&story_tag).await.map_err(|_e| {
+                DbError::FileWriteError(format!("unable to write story: {} tag to file", *story_id))
+            })?;
+            writer
+                .write_all(story.name.as_bytes())
                 .await
-                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} tag to file", *story_id)))?;
-            writer.write_all(story.name.as_bytes())
+                .map_err(|_e| {
+                    DbError::FileWriteError(format!(
+                        "unable to write story: {} name to file",
+                        story.name.as_str()
+                    ))
+                })?;
+            writer
+                .write_all(story.description.as_bytes())
                 .await
-                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} name to file", story.name.as_str())))?;
-            writer.write_all(story.description.as_bytes())
-                .await
-                .map_err(|_e| DbError::FileWriteError(format!("unable to write story: {} description to file", story.description.as_str())))?;
+                .map_err(|_e| {
+                    DbError::FileWriteError(format!(
+                        "unable to write story: {} description to file",
+                        story.description.as_str()
+                    ))
+                })?;
         }
 
-        writer.flush()
-            .await
-            .map_err(|_| DbError::FileWriteError(format!("unable to flush writer to file: {:?}", self.file_path.to_str())))?;
+        writer.flush().await.map_err(|_| {
+            DbError::FileWriteError(format!(
+                "unable to flush writer to file: {:?}",
+                self.file_path.to_str()
+            ))
+        })?;
 
         Ok(())
     }
@@ -450,7 +627,10 @@ impl Epic {
     /// and `Err` variant if unsuccessful.
     pub fn add_story(&mut self, story: Story) -> Result<(), DbError> {
         if self.stories.contains_key(&story.id) {
-            return Err(DbError::IdConflict(format!("a story with id: {} already exists for this epic", story.id)));
+            return Err(DbError::IdConflict(format!(
+                "a story with id: {} already exists for this epic",
+                story.id
+            )));
         } else {
             self.stories.insert(story.id, story);
             Ok(())
@@ -466,7 +646,10 @@ impl Epic {
     /// and `Err` variant if unsuccessful.
     pub fn delete_story(&mut self, story_id: u32) -> Result<u32, DbError> {
         if !self.stories.contains_key(&story_id) {
-            return Err(DbError::DoesNotExist(format!("no story with id: {} present", story_id)));
+            return Err(DbError::DoesNotExist(format!(
+                "no story with id: {} present",
+                story_id
+            )));
         } else {
             self.stories.remove(&story_id);
             Ok(story_id)
@@ -477,14 +660,15 @@ impl Epic {
     /// and `Err` variant if unsuccessful.
     pub fn update_story_status(&mut self, story_id: u32, status: Status) -> Result<(), DbError> {
         if !self.stories.contains_key(&story_id) {
-            Err(DbError::DoesNotExist(format!("unable to update story status for id: {}", story_id)))
+            Err(DbError::DoesNotExist(format!(
+                "unable to update story status for id: {}",
+                story_id
+            )))
         } else {
             self.stories.get_mut(&story_id).unwrap().status = status;
             Ok(())
         }
     }
-
-
 
     /// Returns an `Option<&Story>`. If `self` contains a story with id `story_id` then the `Some` variant is returned,
     /// otherwise the `None` variant is returned.
@@ -559,8 +743,6 @@ impl BytesEncode for Epic {
     }
 }
 
-
-
 /// A struct that encapsulates all pertinent information and behaviors for a single story.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Story {
@@ -591,14 +773,12 @@ impl AsBytes for Story {
     }
 }
 
-
-
 unsafe impl Send for Story {}
 unsafe impl Sync for Story {}
 
 impl BytesEncode for Story {
     type Tag = EncodeTag;
-    
+
     type DecodedTag = DecodeTag;
 
     fn encode(&self) -> Self::Tag {
@@ -653,7 +833,7 @@ impl PartialEq for Status {
             | (Status::InProgress, Status::InProgress)
             | (Status::Resolved, Status::Resolved)
             | (Status::Closed, Status::Closed) => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -667,7 +847,9 @@ impl TryFrom<u8> for Status {
             1 => Ok(Status::InProgress),
             2 => Ok(Status::Resolved),
             3 => Ok(Status::Closed),
-            _ => Err(DbError::ParseError(format!("unable to parse `Status` from byte {value}")))
+            _ => Err(DbError::ParseError(format!(
+                "unable to parse `Status` from byte {value}"
+            ))),
         }
     }
 }
@@ -726,20 +908,29 @@ type EncodeTag = [u8; 13];
 
 impl TagEncoding for EncodeTag {}
 
-
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn create_story_should_work() {
-        let story = Story::new(1, String::from("Test Story 1"), String::from("A simple test story"), Status::Open);
+        let story = Story::new(
+            1,
+            String::from("Test Story 1"),
+            String::from("A simple test story"),
+            Status::Open,
+        );
         println!("{:?}", story);
         assert!(true)
     }
     #[test]
     fn story_encode_decode_should_work() {
-        let story = Story::new(1, String::from("Test Story 1"), String::from("A simple test story"), Status::Open);
+        let story = Story::new(
+            1,
+            String::from("Test Story 1"),
+            String::from("A simple test story"),
+            Status::Open,
+        );
         // Attempt to encode
         let story_tag = story.encode();
 
@@ -748,7 +939,8 @@ mod test {
         assert_eq!(story_tag, [1, 0, 0, 0, 12, 0, 0, 0, 19, 0, 0, 0, 0]);
 
         // Attempt to decode
-        let (story_id, story_name_len, story_description_len, story_status_byte) = <Story as BytesEncode>::decode(story_tag);
+        let (story_id, story_name_len, story_description_len, story_status_byte) =
+            <Story as BytesEncode>::decode(story_tag);
 
         assert_eq!(1, story_id);
         assert_eq!(12, story_name_len);
@@ -764,7 +956,8 @@ mod test {
             String::from("A simple test epic"),
             Status::Open,
             PathBuf::new(),
-            HashMap::new());
+            HashMap::new(),
+        );
 
         println!("{:?}", epic);
 
@@ -779,7 +972,8 @@ mod test {
             String::from("A simple test epic"),
             Status::Open,
             PathBuf::new(),
-            HashMap::new());
+            HashMap::new(),
+        );
 
         // Attempt to encode the epic
         let epic_tag = epic.encode();
@@ -789,7 +983,8 @@ mod test {
         assert_eq!(epic_tag, [1, 0, 0, 0, 11, 0, 0, 0, 18, 0, 0, 0, 0]);
 
         // Attempt to decode the encoded tag
-        let (epic_id, epic_name_len, epic_description_len, epic_status_byte) = Epic::decode(epic_tag);
+        let (epic_id, epic_name_len, epic_description_len, epic_status_byte) =
+            Epic::decode(epic_tag);
 
         assert_eq!(epic_id, 1);
         assert_eq!(epic_name_len, 11);
@@ -808,7 +1003,8 @@ mod test {
             String::from("A simple test epic"),
             Status::Open,
             test_file_path.clone(),
-            HashMap::new());
+            HashMap::new(),
+        );
 
         println!("{:?}", epic);
 
@@ -826,7 +1022,6 @@ mod test {
         let loaded_epic = loaded_epic_result.unwrap();
         // The two epics must be equal
         assert_eq!(epic, loaded_epic);
-
     }
 
     #[test]
@@ -840,13 +1035,29 @@ mod test {
             String::from("A simple test epic"),
             Status::Open,
             test_file_path.clone(),
-            HashMap::new());
+            HashMap::new(),
+        );
 
         println!("{:?}", epic);
 
-        let test_story1 = Story::new(3, String::from("A Test Story"), String::from("A simple test story"), Status::Open);
-        let test_story2 = Story::new(4, String::from("A test Story"), String::from("A simple test story"), Status::Open);
-        let test_story3 = Story::new(5, String::from("A different test Story"), String::from("Another simple test story"), Status::InProgress);
+        let test_story1 = Story::new(
+            3,
+            String::from("A Test Story"),
+            String::from("A simple test story"),
+            Status::Open,
+        );
+        let test_story2 = Story::new(
+            4,
+            String::from("A test Story"),
+            String::from("A simple test story"),
+            Status::Open,
+        );
+        let test_story3 = Story::new(
+            5,
+            String::from("A different test Story"),
+            String::from("Another simple test story"),
+            Status::InProgress,
+        );
 
         assert!(epic.add_story(test_story1.clone()).is_ok());
         assert!(epic.add_story(test_story2.clone()).is_ok());
@@ -887,11 +1098,27 @@ mod test {
             String::from("A simple test epic"),
             Status::Open,
             test_file_path.clone(),
-            HashMap::new());
+            HashMap::new(),
+        );
 
-        let test_story1 = Story::new(6, String::from("A Test Story"), String::from("A simple test story"), Status::Open);
-        let test_story2 = Story::new(7, String::from("A test Story"), String::from("A simple test story"), Status::Open);
-        let test_story3 = Story::new(8, String::from("A different test Story"), String::from("Another simple test story"), Status::InProgress);
+        let test_story1 = Story::new(
+            6,
+            String::from("A Test Story"),
+            String::from("A simple test story"),
+            Status::Open,
+        );
+        let test_story2 = Story::new(
+            7,
+            String::from("A test Story"),
+            String::from("A simple test story"),
+            Status::Open,
+        );
+        let test_story3 = Story::new(
+            8,
+            String::from("A different test Story"),
+            String::from("Another simple test story"),
+            Status::InProgress,
+        );
 
         assert!(epic.add_story(test_story1.clone()).is_ok());
         assert!(epic.add_story(test_story2.clone()).is_ok());
@@ -934,7 +1161,8 @@ mod test {
             String::from("A simple test epic"),
             Status::Open,
             test_file_path.clone(),
-            HashMap::new());
+            HashMap::new(),
+        );
 
         println!("{:?}", epic);
 
@@ -964,9 +1192,10 @@ mod test {
     #[test]
     fn test_create_db_state_should_work() {
         let db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_db.txt".to_string(),
-            "test_epics".to_string()
+            "test_epics".to_string(),
         );
 
         println!("{:?}", db_state);
@@ -976,14 +1205,24 @@ mod test {
     #[test]
     fn test_create_db_state_add_epics_write_and_read() {
         let mut db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_db1.txt".to_string(),
-            "test_epics1".to_string()
+            "test_epics1".to_string(),
         );
 
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()), 1);
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()), 2);
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()), 3);
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()),
+            1
+        );
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()),
+            2
+        );
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()),
+            3
+        );
 
         // assert!(db_state.add_epic("Test Epic".to_string(), "A simple test epic".to_string()).is_err());
 
@@ -992,9 +1231,10 @@ mod test {
         assert!(db_state.write().is_ok());
 
         let mut db_state_prime_result = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_db1.txt".to_string(),
-            "test_epics1".to_string()
+            "test_epics1".to_string(),
         );
 
         println!("{:?}", db_state_prime_result);
@@ -1009,16 +1249,17 @@ mod test {
     #[test]
     fn test_db_state_add_delete_epic() {
         let mut db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_db2.txt".to_string(),
-            "test_epics2".to_string()
+            "test_epics2".to_string(),
         );
 
         println!("{:?}", db_state);
 
         db_state.add_epic(
             "Test Epic".to_string(),
-            "A specially added test epic".to_string()
+            "A specially added test epic".to_string(),
         );
 
         println!("{:?}", db_state);
@@ -1026,11 +1267,12 @@ mod test {
         assert!(db_state.write().is_ok());
 
         let mut db_state = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_db2.txt".to_string(),
-            "test_epics2".to_string()
-        ).expect("should load");
-
+            "test_epics2".to_string(),
+        )
+        .expect("should load");
 
         println!("{:?}", db_state);
 
@@ -1045,10 +1287,12 @@ mod test {
         assert!(db_state.write().is_ok());
 
         let mut db_state_loaded = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_db2.txt".to_string(),
-            "test_epics2".to_string()
-        ).expect("should load");
+            "test_epics2".to_string(),
+        )
+        .expect("should load");
 
         println!("{:?}", db_state_loaded);
 
@@ -1058,30 +1302,55 @@ mod test {
     #[test]
     fn test_db_state_add_delete_story() {
         let mut db_state = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_db.txt".to_string(),
-            "test_epics".to_string()
-        ).expect("should load");
+            "test_epics".to_string(),
+        )
+        .expect("should load");
 
         println!("{:?}", db_state);
 
-        let cur_epic_id = db_state.add_epic("Test Epic".to_string(), "A test Epic for adding/deleting stories".to_string());
+        let cur_epic_id = db_state.add_epic(
+            "Test Epic".to_string(),
+            "A test Epic for adding/deleting stories".to_string(),
+        );
 
         println!("{:?}", cur_epic_id);
 
-        assert!(db_state.add_story(cur_epic_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
-        assert!(db_state.add_story(cur_epic_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
-        assert!(db_state.add_story(cur_epic_id, "Test Story".to_string(), "A Test story for adding/deleting stories".to_string()).is_ok());
+        assert!(db_state
+            .add_story(
+                cur_epic_id,
+                "Test Story".to_string(),
+                "A Test story for adding/deleting stories".to_string()
+            )
+            .is_ok());
+        assert!(db_state
+            .add_story(
+                cur_epic_id,
+                "Test Story".to_string(),
+                "A Test story for adding/deleting stories".to_string()
+            )
+            .is_ok());
+        assert!(db_state
+            .add_story(
+                cur_epic_id,
+                "Test Story".to_string(),
+                "A Test story for adding/deleting stories".to_string()
+            )
+            .is_ok());
 
         println!("{:?}", db_state);
 
         assert!(db_state.write().is_ok());
 
         let mut db_state = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_db.txt".to_string(),
-            "test_epics".to_string()
-        ).expect("should load");
+            "test_epics".to_string(),
+        )
+        .expect("should load");
 
         println!("{:?}", db_state);
 
@@ -1096,12 +1365,7 @@ mod test {
 
     #[test]
     fn test_story_as_bytes() {
-        let story = Story::new(
-            1,
-            "S1".to_string(),
-            "TS1".to_string(),
-            Status::Open
-        );
+        let story = Story::new(1, "S1".to_string(), "TS1".to_string(), Status::Open);
 
         let encoding = story.encode();
         println!("{:?}", encoding);
@@ -1109,12 +1373,22 @@ mod test {
         let bytes = story.as_bytes();
         println!("{:?}", bytes);
 
-        assert_eq!(bytes, vec![1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 83, 49, 84, 83, 49]);
+        assert_eq!(
+            bytes,
+            vec![1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 83, 49, 84, 83, 49]
+        );
     }
 
     #[test]
     fn test_epic_as_bytes() {
-        let mut epic = Epic::new(129, "E129".to_string(), "TE129".to_string(), Status::Open, PathBuf::new(), HashMap::new());
+        let mut epic = Epic::new(
+            129,
+            "E129".to_string(),
+            "TE129".to_string(),
+            Status::Open,
+            PathBuf::new(),
+            HashMap::new(),
+        );
 
         let encoding = epic.encode();
         println!("{:?}", encoding);
@@ -1122,14 +1396,12 @@ mod test {
         let bytes = epic.as_bytes();
         println!("{:?}", bytes);
 
-        assert_eq!(bytes, vec![129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57]);
-
-        let story = Story::new(
-            1,
-            "S1".to_string(),
-            "TS1".to_string(),
-            Status::Open
+        assert_eq!(
+            bytes,
+            vec![129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57]
         );
+
+        let story = Story::new(1, "S1".to_string(), "TS1".to_string(), Status::Open);
 
         let _ = epic.add_story(story);
 
@@ -1137,7 +1409,13 @@ mod test {
 
         println!("{:?}", bytes);
 
-        assert_eq!(bytes, vec![129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 83, 49, 84, 83, 49]);
+        assert_eq!(
+            bytes,
+            vec![
+                129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57, 1, 0,
+                0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 83, 49, 84, 83, 49
+            ]
+        );
     }
 
     #[test]
@@ -1149,7 +1427,7 @@ mod test {
             "TE129".to_string(),
             Status::Open,
             PathBuf::new(),
-            HashMap::new()
+            HashMap::new(),
         );
 
         let epic_bytes = epic.as_bytes();
@@ -1159,16 +1437,19 @@ mod test {
 
         println!("{:?}", bytes);
 
-        assert_eq!(bytes, vec![129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57]);
+        assert_eq!(
+            bytes,
+            vec![129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57]
+        );
         println!("{}", bytes.starts_with(epic_bytes.as_slice()));
 
-        let new_epic =  Epic::new(
+        let new_epic = Epic::new(
             130,
             "E130".to_string(),
             "TE130".to_string(),
             Status::Open,
             PathBuf::new(),
-            HashMap::new()
+            HashMap::new(),
         );
 
         let new_epic_bytes = new_epic.as_bytes();
@@ -1179,21 +1460,34 @@ mod test {
         println!("{:?}", bytes);
 
         assert!(bytes.starts_with(epic_bytes.as_slice()) || bytes.ends_with(epic_bytes.as_slice()));
-        assert!(bytes.starts_with(new_epic_bytes.as_slice()) || bytes.ends_with(new_epic_bytes.as_slice()));
+        assert!(
+            bytes.starts_with(new_epic_bytes.as_slice())
+                || bytes.ends_with(new_epic_bytes.as_slice())
+        );
     }
 
     #[test]
     fn test_async_db_state_read_and_write() {
         use async_std::task;
         let mut db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_async_db1.txt".to_string(),
             "async_test_epics1".to_string(),
         );
 
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 1);
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 2);
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 3);
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            1
+        );
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            2
+        );
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            3
+        );
 
         println!("{:?}", db_state);
 
@@ -1204,9 +1498,10 @@ mod test {
         assert!(handle.is_ok());
 
         let mut db_state_loaded_res = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_async_db1.txt".to_string(),
-            "async_test_epics1".to_string()
+            "async_test_epics1".to_string(),
         );
 
         assert!(db_state_loaded_res.is_ok());
@@ -1218,15 +1513,28 @@ mod test {
     fn test_async_db_state_read_write_delete_epic() {
         use async_std::task;
         let mut db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_async_db2.txt".to_string(),
             "async_test_epics2".to_string(),
         );
 
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 1);
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 2);
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 3);
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 4);
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            1
+        );
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            2
+        );
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            3
+        );
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            4
+        );
 
         println!("{:?}", db_state);
 
@@ -1237,9 +1545,10 @@ mod test {
         assert!(handle.is_ok());
 
         let mut db_state_loaded_res = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_async_db2.txt".to_string(),
-            "async_test_epics2".to_string()
+            "async_test_epics2".to_string(),
         );
 
         assert!(db_state_loaded_res.is_ok());
@@ -1261,9 +1570,10 @@ mod test {
         assert!(handle.is_ok());
 
         let db_state_loaded_res = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_async_db2.txt".to_string(),
-            "async_test_epics2".to_string()
+            "async_test_epics2".to_string(),
         );
 
         assert!(db_state_loaded_res.is_ok());
@@ -1277,21 +1587,38 @@ mod test {
     fn test_async_db_read_write_add_story() {
         use async_std::task;
         let mut db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_async_db3.txt".to_string(),
             "async_test_epics3".to_string(),
         );
 
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 1);
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 2);
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 3);
-        assert_eq!(db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()), 4);
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            1
+        );
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            2
+        );
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            3
+        );
+        assert_eq!(
+            db_state.add_epic("Test Epic".to_string(), "A simple test Epic".to_string()),
+            4
+        );
 
         println!("{:?}", db_state);
 
         assert!(db_state.contains_epic(4));
 
-        let handle = task::block_on(db_state.add_story_async(4, "A simple test story".to_string(), "A simple test story decsription".to_string()));
+        let handle = task::block_on(db_state.add_story_async(
+            4,
+            "A simple test story".to_string(),
+            "A simple test story decsription".to_string(),
+        ));
 
         println!("{:?}", handle);
 
@@ -1302,9 +1629,10 @@ mod test {
         assert!(task::block_on(db_state.write_async()).is_ok());
 
         let mut db_state_loaded_res = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_async_db3.txt".to_string(),
-            "async_test_epics3".to_string()
+            "async_test_epics3".to_string(),
         );
 
         assert!(db_state_loaded_res.is_ok());
@@ -1336,9 +1664,10 @@ mod test {
 
         // Ensure changes persist
         let mut db_state_loaded_res = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database".to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+                .to_string(),
             "test_async_db3.txt".to_string(),
-            "async_test_epics3".to_string()
+            "async_test_epics3".to_string(),
         );
 
         assert!(db_state_loaded_res.is_ok());
