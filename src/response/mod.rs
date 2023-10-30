@@ -254,7 +254,7 @@ impl BytesEncode for Response {
         }
     }
 
-    fn decode(tag: Self::Tag) -> Self::DecodedTag {
+    fn decode(tag: &Self::Tag) -> Self::DecodedTag {
         let mut type_and_flag_bytes = 0u16;
         let mut epic_id = 0u32;
         let mut story_id = 0u32;

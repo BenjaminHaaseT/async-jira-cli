@@ -39,5 +39,5 @@ pub trait BytesEncode {
     /// Required: encodes the type into a `Self::Tag`
     fn encode(&self) -> Self::Tag;
     /// Required: decodes `Self::Tag` into a `Self::DecodedTag`
-    fn decode(tag: Self::Tag) -> Self::DecodedTag;
+    fn decode(tag: &Self::Tag) -> Self::DecodedTag;
 }

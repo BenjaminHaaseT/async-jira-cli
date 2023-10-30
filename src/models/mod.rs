@@ -395,7 +395,7 @@ impl Epic {
         })?;
 
         // Extract data from epic tag
-        let (id, name_len, description_len, status_byte) = <Epic as BytesEncode>::decode(epic_tag);
+        let (id, name_len, description_len, status_byte) = <Epic as BytesEncode>::decode(&epic_tag);
 
         let mut epic_name_bytes = vec![0_u8; name_len as usize];
         let mut epic_description_bytes = vec![0_u8; description_len as usize];
@@ -450,7 +450,7 @@ impl Epic {
 
             // Decode story tag and read bytes from file, propagate errors when they occur
             let (story_id, story_name_len, story_description_len, story_status_byte) =
-                <Story as BytesEncode>::decode(cur_story_tag);
+                <Story as BytesEncode>::decode(&cur_story_tag);
             let mut story_name_bytes = vec![0_u8; story_name_len as usize];
             let mut story_description_bytes = vec![0_u8; story_description_len as usize];
 
@@ -717,7 +717,7 @@ impl BytesEncode for Epic {
         encoded_bytes
     }
 
-    fn decode(tag: Self::Tag) -> Self::DecodedTag {
+    fn decode(tag: &Self::Tag) -> Self::DecodedTag {
         // decode id
         let mut id = 0_u32;
         for i in 0..4 {
@@ -799,7 +799,7 @@ impl BytesEncode for Story {
         encoded_bytes
     }
 
-    fn decode(tag: Self::Tag) -> Self::DecodedTag {
+    fn decode(tag: &Self::Tag) -> Self::DecodedTag {
         let mut id = 0;
         for i in 0..4 {
             id ^= (tag[i] as u32) << (i * 8);
