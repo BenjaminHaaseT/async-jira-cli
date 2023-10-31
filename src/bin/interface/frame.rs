@@ -6,12 +6,16 @@ use async_jira_cli::models::{Epic, Story, Status};
 use async_jira_cli::utils::BytesEncode;
 use crate::UserError;
 
-/// An interface that allows implementers to attempt being created from a reader and a tag.
-pub trait TryFromReader {
-    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: R) -> Result<Self, UserError>;
+pub mod prelude {
+    pub use super::*;
 }
 
-/// A struct that represents the import client facing information of a single `Epic`
+/// An interface that allows implementors to be created from a reader and a tag.
+pub trait TryFromReader {
+    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: &mut R) -> Result<Self, UserError>;
+}
+
+/// Represents the important client facing information of a single `Epic`
 #[derive(Debug)]
 pub struct EpicFrame {
     id: u32,
@@ -20,31 +24,8 @@ pub struct EpicFrame {
     status: Status,
 }
 
-// impl EpicFrame {
-//     pub fn try_from_reader(tag_buf: &[u8; 13], mut reader: impl Read + std::fmt::Debug) -> Result<Self, UserError> {
-//         let (epic_id, name_len, description_len, status) = Epic::decode(tag_buf);
-//         let mut name_bytes = vec![0u8; name_len as usize];
-//         let mut description_bytes = vec![0; description_len as usize];
-//         let status = Status::try_from(status)
-//             .map_err(|_| UserError::ParseFrameError(format!("unable to parse status byte for epic")))?;
-//
-//         // Attempt to read bytes from the reader
-//         reader.read_exact(name_bytes.as_mut_slice())
-//             .map_err(|_| UserError::ReadFrameError(format!("unable to read frame from reader {:?}", reader)))?;
-//         reader.read_exact(description_bytes.as_mut_slice())
-//             .map_err(|_| UserError::ReadFrameError(format!("unable to read frame from reader {:?}", reader)))?;
-//
-//         let name = String::from_utf8(name_bytes)
-//             .map_err(|_| UserError::ParseFrameError("unable to parse Epic Frame's name as valid utf8".to_string()))?;
-//         let description = String::from_utf8(description_bytes)
-//             .map_err(|_| UserError::ParseFrameError("unable to parse Epic Frame's description as valid utf8".to_string()))?;
-//
-//         Ok(EpicFrame { id: epic_id, name, description, status })
-//     }
-// }
-
 impl TryFromReader for EpicFrame {
-    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: R) -> Result<Self, UserError> {
+    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: &mut R) -> Result<Self, UserError> {
         let mut reader = reader;
         let (epic_id, name_len, description_len, status) = Epic::decode(tag_buf);
         let mut name_bytes = vec![0u8; name_len as usize];
@@ -67,6 +48,7 @@ impl TryFromReader for EpicFrame {
     }
 }
 
+/// Represents the important client facing information for a single `Story`
 #[derive(Debug)]
 pub struct StoryFrame {
     id: u32,
@@ -76,7 +58,7 @@ pub struct StoryFrame {
 }
 
 impl TryFromReader for StoryFrame {
-    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: R) -> Result<Self, UserError> {
+    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: &mut R) -> Result<Self, UserError> {
         let mut reader = reader;
         let (story_id, name_len, description_len, status) = Story::decode(tag_buf);
         let mut name_bytes = vec![0; name_len as usize];
@@ -98,3 +80,5 @@ impl TryFromReader for StoryFrame {
         Ok(StoryFrame { id: story_id, name, description, status })
     }
 }
+
+

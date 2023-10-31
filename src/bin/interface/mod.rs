@@ -11,6 +11,8 @@ use crate::UserError;
 mod frame;
 mod pages;
 
+use pages::prelude::*;
+
 // use frame::prelude::*;
 // use pages::prelude::*;
 
@@ -22,7 +24,7 @@ mod pages;
 /// an `Interface` will keep a stack of pages that can be navigated through by the client, and
 /// will display appropriate messages when errors arise.
 pub struct Interface {
-    // page_stack = Vec<Box<dyn Page>>
+    page_stack: Vec<Box<dyn Page>>,
 }
 
 impl Interface {
