@@ -7,6 +7,7 @@ use async_std::{
     prelude::*,
     task,
 };
+
 use std::fmt::Debug;
 
 mod interface;
@@ -17,6 +18,8 @@ use async_jira_cli::utils::prelude::*;
 enum UserError {
     ServerConnection(String),
     ParseResponseError(String),
+    ReadFrameError(String),
+    ParseFrameError(String),
 }
 
 async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), UserError> {
