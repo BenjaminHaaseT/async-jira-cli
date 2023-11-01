@@ -675,6 +675,26 @@ impl Epic {
     pub fn get_story(&self, story_id: u32) -> Option<&Story> {
         self.stories.get(&story_id)
     }
+
+    /// Returns the id of `self.
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    /// Returns a shared reference to the name of `self`.
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
+    /// Returns a shared reference to the description of `self`.
+    pub fn description(&self) -> &String {
+        &self.description
+    }
+
+    /// Returns the status of `self`.
+    pub fn status(&self) -> Status {
+        self.status
+    }
 }
 
 impl AsBytes for Epic {
@@ -760,6 +780,26 @@ impl Story {
             description,
             status,
         }
+    }
+
+    /// Returns the id of `self`
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    /// Returns a shared reference to the name of `self`
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
+    /// Returns a shared reference to the description of `self`.
+    pub fn description(&self) -> &String {
+        &self.description
+    }
+
+    /// Returns the status of `self`
+    pub fn status(&self) -> Status {
+        self.status
     }
 }
 

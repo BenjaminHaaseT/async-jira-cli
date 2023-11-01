@@ -15,6 +15,7 @@ mod interface;
 use async_jira_cli::response::prelude::*;
 use async_jira_cli::utils::prelude::*;
 
+#[derive(Debug)]
 enum UserError {
     ServerConnection(String),
     ParseResponseError(String),

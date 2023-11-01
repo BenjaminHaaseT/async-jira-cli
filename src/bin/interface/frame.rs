@@ -12,7 +12,7 @@ pub mod prelude {
 
 /// An interface that allows implementors to be created from a reader and a tag.
 pub trait TryFromReader {
-    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: &mut R) -> Result<Self, UserError>;
+    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: &mut R) -> Result<Self, UserError> where Self: Sized;
 }
 
 /// Represents the important client facing information of a single `Epic`
@@ -81,4 +81,77 @@ impl TryFromReader for StoryFrame {
     }
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::path::PathBuf;
+    use std::collections::HashMap;
+    use async_jira_cli::utils::prelude::*;
+    use std::io::Cursor;
 
+    #[test]
+    fn test_try_from_reader_epic() {
+        // let mut db = DbState::new("test_dir".to_string(), "test_file".to_string(), "test_epic_dir".to_string());
+        let test_epic = Epic::new(
+            0,
+            "A simple test epic1".to_string(),
+            "A simple test epic for testing purposes".to_string(),
+            Status::Open,
+            PathBuf::new(),
+            HashMap::new());
+
+        let test_epic_bytes = test_epic.as_bytes();
+
+        let mut cursor = Cursor::new(test_epic_bytes);
+
+        let mut tag_buf = [0; 13];
+
+        assert!(cursor.read_exact(&mut tag_buf).is_ok());
+
+        let epic_frame_result = EpicFrame::try_from_reader(&tag_buf, &mut cursor);
+
+        println!("{:?}", epic_frame_result);
+
+        assert!(epic_frame_result.is_ok());
+
+        let epic_frame = epic_frame_result.unwrap();
+
+        println!("{:?}", epic_frame);
+
+        assert_eq!(epic_frame.id, test_epic.id());
+        assert_eq!(epic_frame.name, test_epic.name().clone());
+        assert_eq!(epic_frame.description, test_epic.description().clone());
+        assert_eq!(epic_frame.status, test_epic.status());
+    }
+
+    #[test]
+    fn test_try_from_reader_story() {
+        let test_story = Story::new(
+            0,
+            "A simple test story".to_string(),
+            "A simple test story for testing purposes".to_string(),
+            Status::InProgress
+        );
+
+        let test_story_bytes = test_story.as_bytes();
+
+        let mut cursor = Cursor::new(test_story_bytes);
+
+        let mut tag_buf = [0; 13];
+
+        assert!(cursor.read_exact(&mut tag_buf).is_ok());
+
+        let story_frame_result = StoryFrame::try_from_reader(&tag_buf, &mut cursor);
+
+        println!("{:?}", story_frame_result);
+
+        let story_frame = story_frame_result.unwrap();
+
+        println!("{:?}", story_frame);
+
+        assert_eq!(story_frame.id, test_story.id());
+        assert_eq!(story_frame.name, test_story.name().clone());
+        assert_eq!(story_frame.description, test_story.description().clone());
+        assert_eq!(story_frame.status, test_story.status());
+    }
+}

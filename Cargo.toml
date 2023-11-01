@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 async-std = "1.12.0"
 futures = "0.3.28"
+unicode-width = "0.1.11"
 uuid = { version = "1.4.1",features = ["v4"] }
