@@ -905,6 +905,17 @@ impl Into<u8> for Status {
     }
 }
 
+impl std::fmt::Display for Status {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Status::Open => write!(f, "{}", "OPEN"),
+            Status::InProgress => write!(f, "{}", "IN PROGRESS"),
+            Status::Resolved => write!(f, "{}", "RESOLVED"),
+            Status::Closed => write!(f, "{}", "CLOSED"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum DbError {
     FileLoadError(String),
@@ -980,7 +991,7 @@ mod test {
 
         // Attempt to decode
         let (story_id, story_name_len, story_description_len, story_status_byte) =
-            <Story as BytesEncode>::decode(story_tag);
+            <Story as BytesEncode>::decode(&story_tag);
 
         assert_eq!(1, story_id);
         assert_eq!(12, story_name_len);
@@ -1024,7 +1035,7 @@ mod test {
 
         // Attempt to decode the encoded tag
         let (epic_id, epic_name_len, epic_description_len, epic_status_byte) =
-            Epic::decode(epic_tag);
+            Epic::decode(&epic_tag);
 
         assert_eq!(epic_id, 1);
         assert_eq!(epic_name_len, 11);

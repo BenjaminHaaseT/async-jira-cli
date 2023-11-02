@@ -18,10 +18,10 @@ pub trait TryFromReader {
 /// Represents the important client facing information of a single `Epic`
 #[derive(Debug)]
 pub struct EpicFrame {
-    id: u32,
-    name: String,
-    description: String,
-    status: Status,
+    pub id: u32,
+    pub name: String,
+    pub description: String,
+    pub status: Status,
 }
 
 impl TryFromReader for EpicFrame {
@@ -51,10 +51,10 @@ impl TryFromReader for EpicFrame {
 /// Represents the important client facing information for a single `Story`
 #[derive(Debug)]
 pub struct StoryFrame {
-    id: u32,
-    name: String,
-    description: String,
-    status: Status,
+    pub id: u32,
+    pub name: String,
+    pub description: String,
+    pub status: Status,
 }
 
 impl TryFromReader for StoryFrame {
