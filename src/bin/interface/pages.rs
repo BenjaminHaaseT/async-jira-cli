@@ -169,12 +169,14 @@ impl Page for EpicDetailPage {
     }
 }
 
+/// Represents page to display the details of a single story
 #[derive(Debug)]
 pub struct StoryDetailPage {
     story_frame: StoryFrame,
 }
 
 impl StoryDetailPage {
+    /// Attempts to create a new `StoryDetailPage` from `data`
     pub fn try_create(data: Vec<u8>) -> Result<Self, UserError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
@@ -212,9 +214,10 @@ impl Page for StoryDetailPage {
     }
 }
 
-
-
-
+/// Helper function to justify `text` in `width`. If `text` does not fit in `width`, a new string
+/// will be created that contains as many characters that can fit within `width` followed by
+/// an ellipses. When a String that contains a control character is passed in as a parameter (e.g `\n`), the control
+/// character will be replaced with the unicode unknown symbol i.e U+fffd.
 fn justify_text_with_ellipses(width: usize, text: &String) -> String {
     assert!(width > 3, "cannot center text in an interval with width less than 3");
     let text_width = unicode_width::UnicodeWidthStr::width(text.as_str());
