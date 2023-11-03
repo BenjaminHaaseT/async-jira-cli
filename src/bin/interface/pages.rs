@@ -48,7 +48,7 @@ impl HomePage {
                     }
                     break;
                 }
-                _ => return Err(UserError::ReadFrameError("unable to read frame from response data, data may not be formatted correctly".to_string())),
+                _ => return Err(UserError::ReadFrameError("unable to read EpicFrame from response data, data may not be formatted correctly".to_string())),
             }
             // Keep track of the current position,
             // used to ensure that we have read properly formatted data from the server
@@ -58,6 +58,7 @@ impl HomePage {
         Ok(HomePage { epic_frames })
     }
 
+    /// A helper function for displaying a single line in the implementation of `print_page`.
     fn print_line(epic_frame: &EpicFrame) {
         print!("{:<13}|", epic_frame.id);
         print!(" {:<32}|", justify_text_with_ellipses(32, &epic_frame.name));
@@ -89,6 +90,7 @@ pub struct EpicDetailPage {
 }
 
 impl EpicDetailPage {
+    /// Attempts to create a new `EpicDetailPage` from `data`.
     pub fn try_create(data: Vec<u8>) -> Result<Self, UserError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
@@ -98,7 +100,7 @@ impl EpicDetailPage {
         // Attempt to parse the first epic frame from the stream of bytes
         let frame = match cursor.read_exact(&mut tag_buf) {
             Ok(_) => EpicFrame::try_from_reader(&tag_buf, &mut cursor)?,
-            Err(_) => return Err(UserError::ReadFrameError(String::from("unable to read frame from response data, data may not be formatted correctly"))),
+            Err(_) => return Err(UserError::ReadFrameError(String::from("unable to read EpicFrame from response data, data may not be formatted correctly"))),
         };
 
         // Reset current position of cursor
@@ -116,11 +118,11 @@ impl EpicDetailPage {
                     // is equal to the cursor's current position. If either of these conditions is not true
                     // we know the data was not formatted correctly and we should propagate an error.
                     if cur_pos != cursor.position() || cursor.position() != data_len {
-                        return Err(UserError::ReadFrameError("unable to read frame from response data, data may not be formatted correctly".to_string()));
+                        return Err(UserError::ReadFrameError("error reading frame data from stream, data may not be formatted correctly".to_string()));
                     }
                     break;
                 }
-                Err(_) => return Err(UserError::ReadFrameError(String::from("unable to read frame from response data, data may not be formatted correctly"))),
+                Err(_) => return Err(UserError::ReadFrameError(String::from("unable to read frame tag from response data, data may not be formatted correctly"))),
             }
 
             cur_pos = cursor.position();
@@ -129,7 +131,8 @@ impl EpicDetailPage {
         Ok(EpicDetailPage { frame, story_frames })
     }
 
-    fn print_story_line(story_frame: &StoryFrame) {
+    /// A helper function for displaying a single line in the implementation of `print_page`.
+    fn print_line(story_frame: &StoryFrame) {
         print!("{:<13}|", story_frame.id);
         print!(" {:<32}|", justify_text_with_ellipses(32, &story_frame.name));
         println!(" {:<15}", story_frame.status);
@@ -156,7 +159,7 @@ impl Page for EpicDetailPage {
         println!("{:^16}", "status");
 
         for story_frame in &self.story_frames {
-            EpicDetailPage::print_story_line(story_frame);
+            EpicDetailPage::print_line(story_frame);
         }
 
         println!();
@@ -165,6 +168,51 @@ impl Page for EpicDetailPage {
         println!();
     }
 }
+
+#[derive(Debug)]
+pub struct StoryDetailPage {
+    story_frame: StoryFrame,
+}
+
+impl StoryDetailPage {
+    pub fn try_create(data: Vec<u8>) -> Result<Self, UserError> {
+        let data_len = data.len() as u64;
+        let mut cursor = Cursor::new(data);
+        let mut tag_buf = [0u8; 13];
+
+        let story_frame = match cursor.read_exact(&mut tag_buf) {
+            Ok(_) => StoryFrame::try_from_reader(&tag_buf, &mut cursor)?,
+            Err(_) => return Err(UserError::ReadFrameError(String::from("unable to read story frame tag from response data, data may not have been formatted correctly"))),
+        };
+
+        // Ensure that we have read the exact number of bytes needed, otherwise there was a formatting error
+        if cursor.position() != data_len {
+            return Err(UserError::ReadFrameError(String::from("error reading frame from response data, data may not have been formatted correctly")));
+        }
+
+        Ok(StoryDetailPage { story_frame })
+    }
+}
+
+impl Page for StoryDetailPage {
+    fn print_page(&self) {
+        println!("{:-^65}", "Story");
+        print!("{:^6}|", "id");
+        print!("{:^14}|", "name");
+        print!("{:^29}|", "description");
+        println!("{:^12}", "status");
+        // display story details
+        print!("{:<6}| ", self.story_frame.id);
+        print!("{:^12} | ", justify_text_with_ellipses(12, &self.story_frame.name));
+        print!("{:^27} | ", justify_text_with_ellipses(27, &self.story_frame.description));
+        println!("{:^10}", self.story_frame.status);
+        println!();
+
+        println!("[p] previous | [u] update story | [d] delete story");
+    }
+}
+
+
 
 
 fn justify_text_with_ellipses(width: usize, text: &String) -> String {
@@ -331,6 +379,40 @@ mod test {
         let epic_detail_page = epic_detail_page_res.unwrap();
 
         epic_detail_page.print_page();
+    }
+
+    #[test]
+    fn test_try_create_story_detail_page() {
+        let test_story = Story::new(0, String::from("A test story"), String::from("A good story for testing purposes"), Status::Open);
+        let story_bytes = test_story.as_bytes();
+
+        let test_story_detail_page_res = StoryDetailPage::try_create(story_bytes);
+
+        println!("{:?}", test_story_detail_page_res);
+        assert!(test_story_detail_page_res.is_ok());
+
+        let test_story_detail_page = test_story_detail_page_res.unwrap();
+
+        println!("{:?}", test_story_detail_page);
+        assert_eq!(test_story_detail_page.story_frame.id, 0);
+        assert_eq!(test_story_detail_page.story_frame.name, String::from("A test story"));
+        assert_eq!(test_story_detail_page.story_frame.description, String::from("A good story for testing purposes"));
+        assert_eq!(test_story_detail_page.story_frame.status, Status::Open);
+    }
+
+    #[test]
+    fn test_print_page_story_detail_page() {
+        let test_story = Story::new(0, String::from("A test story"), String::from("A good story for testing purposes"), Status::Open);
+        let story_bytes = test_story.as_bytes();
+
+        let test_story_detail_page_res = StoryDetailPage::try_create(story_bytes);
+
+        println!("{:?}", test_story_detail_page_res);
+        assert!(test_story_detail_page_res.is_ok());
+
+        let test_story_detail_page = test_story_detail_page_res.unwrap();
+
+        test_story_detail_page.print_page();
     }
 }
 
