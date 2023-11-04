@@ -11,6 +11,10 @@ pub mod prelude {
     pub use super::*;
 }
 
+// TODO: 1) implement parse option methods for pages
+//          Method should accept an option represented as a &str and a handle on Stdin
+//          Then either attempt to build a valid request or print an error message to the console
+
 /// The `Page` trait allows for different types of CLI interface pages to share
 /// the functionality of any typical CLI page i.e. `print_page`. The main purpose is to allow
 /// different types of pages to be held in a single data structure as trait objects.

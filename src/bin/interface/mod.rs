@@ -2,7 +2,7 @@
 //! with the server.
 //!
 
-use async_std::net::TcpStream;
+use std::marker::Unpin;
 use async_std::io::{ReadExt, Read};
 use async_jira_cli::response::prelude::*;
 use async_jira_cli::utils::prelude::*;
@@ -16,6 +16,10 @@ use pages::prelude::*;
 // use frame::prelude::*;
 // use pages::prelude::*;
 
+pub mod prelude {
+    pub use super::*;
+}
+
 /// Implements the functionality for creating a CLI that a client can use to interact with
 /// the server.
 ///
@@ -27,11 +31,19 @@ pub struct Interface {
     page_stack: Vec<Box<dyn Page>>,
 }
 
+// TODO: 1) move response conditional blocks into separate functions
+// TODO: 2) implement a parse_option method for taking a user selected option input from stdin
+//          and parsing it correctly i.e. implementing the logic needed for the users given selection
 impl Interface {
+    /// Creates a new `Interface`
+    pub fn new() -> Self {
+        Interface { page_stack: Vec::new() }
+    }
+
     // Attempt to read a response from the stream. If response read correctly, then parse frames
     // from the read data and create a new page and ad page to page_stack, or display a message and a current page depending
     // on the logic.
-    pub async fn parse_response(&mut self, tag_buf: &[u8; 18], stream: &TcpStream) -> Result<(), UserError> {
+    pub async fn parse_response(&mut self, tag_buf: &[u8; 18], stream: impl ReadExt + Unpin) -> Result<(), UserError> {
         let mut stream = stream;
         let (type_and_flag, epic_id, story_id, data_len) = Response::decode(tag_buf);
 
@@ -227,5 +239,17 @@ impl Interface {
         }
 
         Ok(())
+    }
+
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_interface_new() {
+        let mut interface = Interface::new();
+        assert!(true);
     }
 }
