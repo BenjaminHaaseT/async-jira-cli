@@ -236,8 +236,8 @@ async fn broker(
                         peer_id,
                     );
                 } else {
-                    // let mut client_sender = clients.get_mut(&peer_id).unwrap();
-                    // let _ = log_connection_error(client_sender.send(Response::ClientAlreadyExists).await, peer_id);
+                    let mut client_sender = clients.get_mut(&peer_id).unwrap();
+                    let _ = log_connection_error(client_sender.send(Response::ClientAlreadyExists).await, peer_id);
                     // TODO: Log errors, instead of writing to stderr
                     eprintln!("error: client already exists");
                 }
