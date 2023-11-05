@@ -4,6 +4,7 @@ use crate::interface::frame::prelude::*;
 use crate::UserError;
 use async_jira_cli::models::prelude::*;
 use async_jira_cli::utils::prelude::*;
+use async_std::io::ReadExt;
 use std::io::{Read, Cursor, Seek, ErrorKind};
 use unicode_width;
 
@@ -29,6 +30,35 @@ pub struct HomePage {
 }
 
 impl HomePage {
+    /// Associated method  for accepting a request option then performing the appropriate logic for construction
+    /// the request, i.e. prompting the user for input or displaying an error message etc...
+    pub async fn parse_request<R: ReadExt + Unpin>(request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
+        if request_option.to_lowercase() == "q" {
+            return Ok(None);
+        } else if request_option.to_lowercase() == "c" {
+            let mut input_reader = input_reader;
+            let mut epic_name = String::new();
+            print!("epic name: ");
+            let _ = input_reader.read_to_string(&mut epic_name)
+                .await
+                .map_err(|_| UserError::ParseRequestOption)?;
+            // Remove new line character from input
+            epic_name.pop();
+            println!();
+            let mut epic_description = String::new();
+            print!("epic description: ");
+            let _ = input_reader.read_to_string(&mut epic_description)
+                .await
+                .map_err(|_| UserError::ParseRequestOption)?;
+            // TODO: create a way to create a new event tag from this information.
+
+            todo!()
+        } else if let Ok(id) = request_option.parse::<i32>() {
+            todo!()
+        } else {
+            todo!()
+        }
+    }
     pub fn try_create(mut data: Vec<u8>) -> Result<Self, UserError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
@@ -61,6 +91,8 @@ impl HomePage {
 
         Ok(HomePage { epic_frames })
     }
+
+
 
     /// A helper function for displaying a single line in the implementation of `print_page`.
     fn print_line(epic_frame: &EpicFrame) {

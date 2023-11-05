@@ -23,6 +23,7 @@ pub enum UserError {
     ReadFrameError(String),
     ParseFrameError(String),
     InternalServerError,
+    ParseRequestOption,
 }
 
 async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), UserError> {
