@@ -123,7 +123,7 @@ async fn connection_loop(
                 broker_sender.send(event).await.unwrap();
             }
             // We were unable to parse a valid event from the clients stream,
-            Err(_) => {
+            Err(_e) => {
                 broker_sender
                     .send(Event::UnparseableEvent {
                         peer_id: client_id.clone(),

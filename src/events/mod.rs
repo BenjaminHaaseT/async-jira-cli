@@ -246,13 +246,129 @@ impl Event {
     ) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         let story_id = parse_4_bytes(&tag[5..9]);
-        let story_status = Status::try_from(tag[10])?;
+        let story_status = Status::try_from(tag[9])?;
         Ok(Event::UpdateStoryStatus {
             peer_id: client_id,
             epic_id,
             story_id,
             status: story_status,
         })
+    }
+
+    /// Associated function, creates an valid tag that will parse to an `AddEpic` variant
+    /// from `epic_name` and `epic_description`
+    pub fn add_epic_tag(epic_name: &String, epic_description: &String) -> [u8; 13] {
+        let epic_name_bytes_len = epic_name.as_bytes().len();
+        let epic_description_bytes_len = epic_description.as_bytes().len();
+        let mut tag = [0; 13];
+        tag[0] ^= 1;
+        for i in 0..4 {
+            tag[i + 1] ^= ((epic_name_bytes_len >> (i * 8)) & 0xff) as u8;
+        }
+        for i in 0..4 {
+            tag[i + 5] ^= ((epic_description_bytes_len >> (i * 8)) & 0xff) as u8;
+        }
+        tag
+    }
+
+    /// Associated function, creates a tag that will parse to an `DeleteEpic` variant
+    /// from `epic_id`
+    pub fn delete_epic_tag(epic_id: u32) -> [u8; 13] {
+        let mut tag = [0; 13];
+        tag[0] ^= (1 << 1);
+        for i in 0..4 {
+            tag[i + 1] ^= ((epic_id >> (i as u32 * 8)) & 0xff) as u8;
+        }
+        tag
+    }
+
+    /// Associated function, creates a tag that will parse as an `GetEpic` variant
+    /// from `epic_id`
+    pub fn get_epic_tag(epic_id: u32) -> [u8; 13] {
+        let mut tag = [0; 13];
+        tag[0] ^= (1 << 2);
+        for i in 0..4 {
+            tag[i + 1] ^= ((epic_id >> (i as u32 * 8)) & 0xff) as u8;
+        }
+        tag
+    }
+
+    /// Associated function creates a tag that will parse as a `UpdateEpicStatus` variant
+    /// from `epic_id` and `status`. Note that, `status` is assumed to be a valid `u8` representation
+    /// of a `Status` i.e if `status` is passed as a parameter then `Status::try_from(status)` should
+    /// not return an `Err`.
+    pub fn get_update_epic_status_tag(epic_id: u32, status: u8) -> [u8; 13] {
+        let mut tag = [0; 13];
+        tag[0] ^= 1 << 3;
+        for i in 0..4 {
+            tag[i + 1] ^= ((epic_id >> (i as u32 * 8)) &0xff) as u8;
+        }
+        tag[5] = status;
+        tag
+    }
+
+    /// Associated function, creates a tag that will parse as a `GetStory` variant from
+    /// `epic_id` and `story_id`.
+    pub fn get_story_tag(epic_id: u32, story_id: u32) -> [u8; 13] {
+        let mut tag = [0; 13];
+        tag[0] ^= 1 << 4;
+        for i in 0..4 {
+            tag[i + 1] ^= ((epic_id >> (i as u32 * 8)) & 0xff) as u8;
+        }
+        for i in 0..4 {
+            tag[i + 5] ^= ((story_id >> (i as u32 * 8)) & 0xff) as u8;
+        }
+        tag
+    }
+
+    /// Associated function, creates a tag that will parse as a `AddStory` variant from
+    /// `epic_id`, `story_name` and `story_description`.
+    pub fn add_story_tag(epic_id: u32, story_name: &String, story_description: &String) -> [u8; 13] {
+        let story_name_bytes_len = story_name.as_bytes().len();
+        let story_description_bytes_len = story_description.as_bytes().len();
+        let mut tag = [0; 13];
+        tag[0] ^= 1 << 5;
+        for i in 0.. 4 {
+            tag[i + 1] ^= ((epic_id >> (i as u32 * 8)) & 0xff) as u8;
+        }
+        for i in 0 .. 4 {
+            tag[i + 5] ^= ((story_name_bytes_len >> (i * 8)) & 0xff) as u8;
+        }
+        for i in 0..4 {
+            tag[i + 9] ^= ((story_description_bytes_len >> (i * 8)) & 0xff) as u8;
+        }
+        tag
+    }
+
+    /// Associated function, creates a tag that will parse as a `DeleteStory` variant from
+    /// `epic_id` and `story_id`.
+    pub fn delete_story_tag(epic_id: u32, story_id: u32) -> [u8; 13] {
+        let mut tag = [0; 13];
+        tag[0] ^= 1 << 6;
+        for i in 0..4 {
+            tag[i + 1] ^= ((epic_id >> (i as u32 * 8)) &0xff) as u8;
+        }
+        for i in 0..4 {
+            tag[i + 5] ^= ((story_id >> (i as u32 * 8)) & 0xff) as u8;
+        }
+        tag
+    }
+
+    /// Associated function, creates a tag that will parse as a `UpdateStoryStatus` variant from
+    /// `epic_id`, `story_id` and `status`. Note that, `status` is assumed to be a valid `u8` representation
+    /// of a `Status` i.e if `status` is passed as a parameter then `Status::try_from(status)` should
+    /// not return an `Err`.
+    pub fn update_story_status_tag(epic_id: u32, story_id: u32, status: u8) -> [u8; 13] {
+        let mut tag = [0; 13];
+        tag[0] ^= 1 << 7;
+        for i in 0..4 {
+            tag[i + 1] ^= ((epic_id >> (i as u32 * 8)) & 0xff) as u8;
+        }
+        for i in 0..4 {
+            tag[i + 5] ^= ((story_id >> (i as u32 * 8)) & 0xff) as u8;
+        }
+        tag[9] = status;
+        tag
     }
 }
 
