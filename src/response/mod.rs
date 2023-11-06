@@ -367,7 +367,7 @@ mod test {
         let response = Response::ClientAddedOk(vec![]);
         let encoding = response.encode();
         assert_eq!(encoding, [128, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        let decoding = Response::decode(encoding);
+        let decoding = Response::decode(&encoding);
         println!("{:?}", decoding);
         assert_eq!(decoding, (32769, 0, 0, 0));
         println!("{:016b}", decoding.0);
@@ -375,7 +375,7 @@ mod test {
         let response = Response::ClientAlreadyExists;
         let encoding = response.encode();
         assert_eq!(encoding, [0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        let decoding = Response::decode(encoding);
+        let decoding = Response::decode(&encoding);
         println!("{:?}", decoding);
         assert_eq!(decoding, (2, 0, 0, 0));
         println!("{:016b}", decoding.0);
