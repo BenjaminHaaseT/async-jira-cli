@@ -25,6 +25,7 @@ pub enum UserError {
     InternalServerError,
     ParseRequestOption,
     InvalidRequest,
+    InvalidInput(String),
 }
 
 impl Display for UserError {
@@ -37,6 +38,7 @@ impl Display for UserError {
             UserError::InternalServerError => write!(f, "An internal server error occurred, please try again"),
             UserError::ParseRequestOption => write!(f, "Unable to parse entered option, please try again"),
             UserError::InvalidRequest => write!(f, "Invalid request, please choose a valid option"),
+            UserError::InvalidInput(s) => write!(f, "{s}"),
         }
     }
 }

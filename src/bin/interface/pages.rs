@@ -7,6 +7,7 @@ use async_jira_cli::utils::prelude::*;
 use async_jira_cli::events::prelude::*;
 use async_std::io::{ReadExt, BufRead};
 use std::io::{Read, Cursor, Seek, ErrorKind};
+use async_std::io::prelude::BufReadExt;
 use unicode_width;
 
 pub mod prelude {
@@ -49,11 +50,18 @@ impl HomePage {
 
             // Remove new line character from name
             epic_name.pop();
+            if epic_name.as_bytes().len() as u32 > u32::MAX {
+                return Err(UserError::InvalidInput(String::from("Invalid input, epic's name is to large")));
+            }
             println!();
 
             let mut epic_description = String::new();
 
             print!("epic description: ");
+
+            if epic_description.as_bytes().len() as u32 > u32::MAX {
+                return Err(UserError::InvalidInput(String::from("Invalid input, epic's description is to large")));
+            }
 
             let _ = input_reader.read_line(&mut epic_description)
                 .await
@@ -186,11 +194,102 @@ impl EpicDetailPage {
         Ok(EpicDetailPage { frame, story_frames })
     }
 
+    /// Attempts to create a vector of bytes that encodes the request received from user input.
+    /// Takes `request_option` which represents the user request and `input_reader` which is the
+    /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
+    /// the request was created successfully, otherwise
+    pub async fn parse_request<R: BufRead + ReadExt + Unpin>(&self, request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
+        if request_option.to_lowercase() == "p" {
+            Ok(None)
+        } else if request_option.to_lowercase() == "u" {
+            // Update epic's status in this case
+            let mut input_reader = input_reader;
+            let mut new_status_buf = String::new();
+            // read the new status from the user
+            let new_status = loop {
+                self.print_status_update_menu();
+                match input_reader.read_line(&mut new_status_buf).await {
+                    Ok(_n) => {
+                        // Remove new line character from buffer
+                        new_status_buf.pop();
+                        match new_status_buf.parse::<u8>() {
+                            Ok(s) if (0..4u8).contains(&s) => {
+                                break s;
+                            }
+                            Ok(s) => {
+                                println!("invalid status selection, please try again");
+                                new_status_buf = String::new();
+                                continue;
+                            }
+                            Err(_) => {
+                                println!("unable to parse status selection, please try again");
+                                eprintln!("unable to parse status selection, please try again");
+                                new_status_buf = String::new();
+                                continue;
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        println!("unable to parse selection, please try again");
+                        eprintln!("unable to parse selection, please try again");
+                        new_status_buf = String::new();
+                        continue;
+                    }
+                }
+            };
+            // Create the request bytes
+            let request_bytes = Event::get_update_epic_status_tag(self.frame.id, new_status).to_vec();
+            Ok(Some(request_bytes))
+        } else if request_option.to_lowercase() == "d" {
+            let mut input_reader = input_reader;
+
+            // Delete the epic
+            println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
+            let mut user_choice = String::new();
+
+            let request_bytes = loop {
+                input_reader.read_line(&mut input_reader)
+                    .await
+                    .map_err(|_| UserError::ParseRequestOption)?;
+                user_choice.pop();
+                if user_choice.to_lowercase() == "y" {
+                    break Event::delete_epic_tag(self.frame.id).to_vec();
+                } else if user_choice.to_lowercse() == "n" {
+                    break vec![];
+                } else {
+                    println!("please choose a valid option");
+                    println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
+                    user_choice = String::new();
+                    continue;
+                }
+            };
+
+            Ok(Some(request_bytes))
+        } else if request_option.to_lowercase() == "c" {
+            // Create a new story
+            todo!()
+        } else if let Ok(story_id) = request_option.parse::<u32>() {
+            // navigate to story detail page
+            todo!()
+        } else {
+            Err(UserError::InvalidRequest)
+        }
+    }
+
     /// A helper function for displaying a single line in the implementation of `print_page`.
     fn print_line(story_frame: &StoryFrame) {
         print!("{:<13}|", story_frame.id);
         print!(" {:<32}|", justify_text_with_ellipses(32, &story_frame.name));
         println!(" {:<15}", story_frame.status);
+    }
+
+    /// A helper function for displaying the status selection menu
+    fn print_status_update_menu(&self) {
+        println!("please select the status you would like to update epic {} with", self.frame.id);
+        println!("{:<11} - 0", "Open");
+        println!("{:<11} - 1", "In Progress");
+        println!("{:<11} - 2", "Resolved");
+        println!("{:<11} - 3", "Closed");
     }
 }
 
