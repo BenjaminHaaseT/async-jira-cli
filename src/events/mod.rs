@@ -563,21 +563,60 @@ mod test {
 
     #[test]
     fn test_get_delete_story_tag() {
-        todo!()
+        let test_epic_id = 2353;
+        let test_story_id = 4798;
+        let tag = Event::get_delete_story_tag(test_epic_id, test_story_id);
+        println!("{:?}", tag);
+        assert_eq!(tag, [64, 49, 9, 0, 0, 190, 18, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]
     fn test_try_create_delete_story_event() {
-        todo!()
+        let test_epic_id = 2353;
+        let test_story_id = 4798;
+        let tag = Event::get_delete_story_tag(test_epic_id, test_story_id);
+        let test_client_id = Uuid::new_v4();
+
+        let create_delete_story_event_res = block_on(Event::try_create_delete_story(test_client_id, &tag));
+
+        println!("{:?}", create_delete_story_event_res);
+        assert!(create_delete_story_event_res.is_ok());
+
+        let Event::DeleteStory { peer_id, epic_id, story_id } = create_delete_story_event_res.unwrap() else { panic!("unable to parse event correctly") };
+
+        assert_eq!(peer_id, test_client_id);
+        assert_eq!(epic_id, test_epic_id);
+        assert_eq!(story_id, test_story_id);
     }
 
     #[test]
     fn test_get_update_story_status_tag() {
-        todo!()
+        let test_epic_id = 2353;
+        let test_story_id = 4798;
+        let test_story_status = 3;
+        let tag = Event::get_update_story_status_tag(test_epic_id, test_story_id, test_story_status);
+
+        println!("{:?}", tag);
+        assert_eq!(tag, [128, 49, 9, 0, 0, 190, 18, 0, 0, 3, 0, 0, 0]);
     }
 
     #[test]
     fn test_try_create_update_story_status_event() {
-        todo!()
+        let test_epic_id = 2353;
+        let test_story_id = 4798;
+        let test_story_status = 3;
+        let tag = Event::get_update_story_status_tag(test_epic_id, test_story_id, test_story_status);
+        let test_client_id = Uuid::new_v4();
+
+        let update_story_status_event_res = block_on(Event::try_create_update_story_status(test_client_id, &tag));
+
+        println!("{:?}", update_story_status_event_res);
+        assert!(update_story_status_event_res.is_ok());
+
+        let Event::UpdateStoryStatus { peer_id, epic_id, story_id, status} = update_story_status_event_res.unwrap() else { panic!("unable to parse event correctly") };
+        assert_eq!(peer_id, test_client_id);
+        assert_eq!(epic_id, test_epic_id);
+        assert_eq!(story_id, test_story_id);
+        assert_eq!(status, Status::try_from(test_story_status).expect("error creating status from test_story_status"));
     }
 }
