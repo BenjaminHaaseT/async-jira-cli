@@ -31,7 +31,7 @@ pub enum Event {
     /// Represents a client request to delete an `Epic`
     DeleteEpic { peer_id: Uuid, epic_id: u32 },
 
-    /// Represents a client request to get an `Epics` data
+    /// Represents a client request to get an `Epic`s data
     GetEpic { peer_id: Uuid, epic_id: u32 },
 
     /// Represents a client request to update an `Epic`s status field

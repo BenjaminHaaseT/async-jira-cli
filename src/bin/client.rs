@@ -8,7 +8,7 @@ use async_std::{
     task,
 };
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 
 mod interface;
 
@@ -24,7 +24,26 @@ pub enum UserError {
     ParseFrameError(String),
     InternalServerError,
     ParseRequestOption,
+    InvalidRequest,
 }
+
+impl Display for UserError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UserError::ServerConnection(s) => write!(f, "{s}"),
+            UserError::ParseResponseError(s) => write!(f, "{s}"),
+            UserError::ReadFrameError(s) => write!(f, "{s}"),
+            UserError::ParseFrameError(s) => write!(f, "{s}"),
+            UserError::InternalServerError => write!(f, "An internal server error occurred, please try again"),
+            UserError::ParseRequestOption => write!(f, "Unable to parse entered option, please try again"),
+            UserError::InvalidRequest => write!(f, "Invalid request, please choose a valid option"),
+        }
+    }
+}
+
+impl std::error::Error for UserError {}
+
+
 
 async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), UserError> {
     // Connect to the server

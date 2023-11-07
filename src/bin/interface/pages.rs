@@ -4,7 +4,8 @@ use crate::interface::frame::prelude::*;
 use crate::UserError;
 use async_jira_cli::models::prelude::*;
 use async_jira_cli::utils::prelude::*;
-use async_std::io::ReadExt;
+use async_jira_cli::events::prelude::*;
+use async_std::io::{ReadExt, BufRead};
 use std::io::{Read, Cursor, Seek, ErrorKind};
 use unicode_width;
 
@@ -30,35 +31,54 @@ pub struct HomePage {
 }
 
 impl HomePage {
-    /// Associated method  for accepting a request option then performing the appropriate logic for construction
+    /// Associated method  for accepting a request option then performing the appropriate logic for constructing
     /// the request, i.e. prompting the user for input or displaying an error message etc...
-    pub async fn parse_request<R: ReadExt + Unpin>(request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
+    pub async fn parse_request<R: BufRead + ReadExt + Unpin>(request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
         if request_option.to_lowercase() == "q" {
             return Ok(None);
         } else if request_option.to_lowercase() == "c" {
+            // User has selected to add a new epic to the database
             let mut input_reader = input_reader;
             let mut epic_name = String::new();
+
             print!("epic name: ");
-            let _ = input_reader.read_to_string(&mut epic_name)
+
+            let _ = input_reader.read_line(&mut epic_name)
                 .await
                 .map_err(|_| UserError::ParseRequestOption)?;
-            // Remove new line character from input
+
+            // Remove new line character from name
             epic_name.pop();
             println!();
+
             let mut epic_description = String::new();
+
             print!("epic description: ");
-            let _ = input_reader.read_to_string(&mut epic_description)
+
+            let _ = input_reader.read_line(&mut epic_description)
                 .await
                 .map_err(|_| UserError::ParseRequestOption)?;
-            // TODO: create a way to create a new event tag from this information.
 
-            todo!()
-        } else if let Ok(id) = request_option.parse::<i32>() {
-            todo!()
+            // Remove the new line character from description
+            epic_description.pop();
+
+            // Get the bytes for the request from the tag, name and description
+            let mut request_bytes = Event::add_epic_tag(&epic_name, &epic_description).to_vec();
+            request_bytes.extend_from_slice(epic_name.as_bytes());
+            request_bytes.extend_from_slice(epic_description.as_bytes());
+
+            Ok(Some(request_bytes))
+        } else if let Ok(id) = request_option.parse::<u32>() {
+            // User has selected to request details for an epic
+            let request_bytes = Event::get_epic_tag(id).to_vec();
+            Ok(Some(request_bytes))
         } else {
-            todo!()
+            Err(UserError::InvalidRequest)
         }
     }
+
+    /// Associated method, attempts to create a new `HomePage` struct from `data`.
+    /// Returns a `Result`, the `Ok` variant if creating was successful, otherwise `Err`.
     pub fn try_create(mut data: Vec<u8>) -> Result<Self, UserError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
@@ -92,8 +112,6 @@ impl HomePage {
         Ok(HomePage { epic_frames })
     }
 
-
-
     /// A helper function for displaying a single line in the implementation of `print_page`.
     fn print_line(epic_frame: &EpicFrame) {
         print!("{:<13}|", epic_frame.id);
@@ -126,7 +144,8 @@ pub struct EpicDetailPage {
 }
 
 impl EpicDetailPage {
-    /// Attempts to create a new `EpicDetailPage` from `data`.
+    /// Attempts to create a new `EpicDetailPage` from `data`. Returns a `Result`, the `Ok` variant
+    /// if creating was successful, otherwise `Err`.
     pub fn try_create(data: Vec<u8>) -> Result<Self, UserError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
