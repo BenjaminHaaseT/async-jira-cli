@@ -2,8 +2,8 @@
 
 use std::fmt::Debug;
 use std::io::Read;
-use async_jira_cli::models::{Epic, Story, Status};
-use async_jira_cli::utils::BytesEncode;
+use async_jira_cli::models::prelude::*;
+use async_jira_cli::utils::{BytesEncode, TagEncoding};
 use crate::UserError;
 
 pub mod prelude {
@@ -11,8 +11,11 @@ pub mod prelude {
 }
 
 /// An interface that allows implementors to be created from a reader and a tag.
-pub trait TryFromReader {
-    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: &mut R) -> Result<Self, UserError> where Self: Sized;
+pub trait TryFromReader<B: TagEncoding> {
+    fn try_from_reader<R>(tag_buf: B, reader: &mut R) -> Result<Self, UserError>
+        where
+            Self: Sized,
+            R: Read + Debug;
 }
 
 /// Represents the important client facing information of a single `Epic`
@@ -24,8 +27,11 @@ pub struct EpicFrame {
     pub status: Status,
 }
 
-impl TryFromReader for EpicFrame {
-    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: &mut R) -> Result<Self, UserError> {
+impl TryFromReader<&EpicEncodeTag> for EpicFrame {
+    fn try_from_reader<R>(tag_buf: &EpicEncodeTag, reader: &mut R) -> Result<Self, UserError>
+    where
+        R: Read + Debug,
+    {
         let mut reader = reader;
         let (epic_id, name_len, description_len, status) = Epic::decode(tag_buf);
         let mut name_bytes = vec![0u8; name_len as usize];
@@ -52,15 +58,19 @@ impl TryFromReader for EpicFrame {
 #[derive(Debug)]
 pub struct StoryFrame {
     pub id: u32,
+    pub epic_id: u32,
     pub name: String,
     pub description: String,
     pub status: Status,
 }
 
-impl TryFromReader for StoryFrame {
-    fn try_from_reader<R: Read + Debug>(tag_buf: &[u8; 13], reader: &mut R) -> Result<Self, UserError> {
+impl TryFromReader<&StoryEncodeTag> for StoryFrame {
+    fn try_from_reader<R>(tag_buf: &[u8; 17], reader: &mut R) -> Result<Self, UserError>
+        where
+            R: Read + Debug,
+    {
         let mut reader = reader;
-        let (story_id, name_len, description_len, status) = Story::decode(tag_buf);
+        let (story_id, epic_id, name_len, description_len, status) = Story::decode(tag_buf);
         let mut name_bytes = vec![0; name_len as usize];
         let mut description_bytes = vec![0; description_len as usize];
         let status = Status::try_from(status)
@@ -77,7 +87,7 @@ impl TryFromReader for StoryFrame {
         let description = String::from_utf8(description_bytes)
             .map_err(|_| UserError::ParseFrameError("unable to parse Story Frame's description as valid utf8".to_string()))?;
 
-        Ok(StoryFrame { id: story_id, name, description, status })
+        Ok(StoryFrame { id: story_id, epic_id, name, description, status })
     }
 }
 
@@ -128,6 +138,7 @@ mod test {
     fn test_try_from_reader_story() {
         let test_story = Story::new(
             0,
+            1,
             "A simple test story".to_string(),
             "A simple test story for testing purposes".to_string(),
             Status::InProgress
@@ -137,7 +148,7 @@ mod test {
 
         let mut cursor = Cursor::new(test_story_bytes);
 
-        let mut tag_buf = [0; 13];
+        let mut tag_buf = [0; 17];
 
         assert!(cursor.read_exact(&mut tag_buf).is_ok());
 

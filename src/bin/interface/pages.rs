@@ -157,23 +157,24 @@ impl EpicDetailPage {
     pub fn try_create(data: Vec<u8>) -> Result<Self, UserError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
-        let mut tag_buf = [0u8; 13];
+        let mut epic_tag_buf = [0u8; 13];
         let mut cur_pos = cursor.position();
 
         // Attempt to parse the first epic frame from the stream of bytes
-        let frame = match cursor.read_exact(&mut tag_buf) {
-            Ok(_) => EpicFrame::try_from_reader(&tag_buf, &mut cursor)?,
+        let frame = match cursor.read_exact(&mut epic_tag_buf) {
+            Ok(_) => EpicFrame::try_from_reader(&epic_tag_buf, &mut cursor)?,
             Err(_) => return Err(UserError::ReadFrameError(String::from("unable to read EpicFrame from response data, data may not be formatted correctly"))),
         };
 
         // Reset current position of cursor
         cur_pos = cursor.position();
         let mut story_frames = vec![];
+        let mut story_tag_buf = [0u8; 17];
 
         loop {
-            match cursor.read_exact(&mut tag_buf) {
+            match cursor.read_exact(&mut story_tag_buf) {
                 Ok(_) => {
-                    let story_frame = StoryFrame::try_from_reader(&tag_buf, &mut cursor)?;
+                    let story_frame = StoryFrame::try_from_reader(&story_tag_buf, &mut cursor)?;
                     story_frames.push(story_frame);
                 }
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -363,7 +364,7 @@ impl StoryDetailPage {
     pub fn try_create(data: Vec<u8>) -> Result<Self, UserError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
-        let mut tag_buf = [0u8; 13];
+        let mut tag_buf = [0u8; 17];
 
         let story_frame = match cursor.read_exact(&mut tag_buf) {
             Ok(_) => StoryFrame::try_from_reader(&tag_buf, &mut cursor)?,

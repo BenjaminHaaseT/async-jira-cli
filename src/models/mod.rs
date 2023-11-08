@@ -276,6 +276,7 @@ impl DbState {
         self.last_unique_id += 1;
         let new_story = Story::new(
             self.last_unique_id,
+            epic_id,
             story_name,
             story_description,
             Status::Open,
@@ -310,6 +311,7 @@ impl DbState {
             self.last_unique_id += 1;
             let new_story = Story::new(
                 self.last_unique_id,
+                epic_id,
                 story_name,
                 story_description,
                 Status::Open,
@@ -430,7 +432,7 @@ impl Epic {
 
         // Create stories hashmap and tag for the current story if any
         let mut stories = HashMap::new();
-        let mut cur_story_tag = [0_u8; 13];
+        let mut cur_story_tag = [0_u8; 17];
         // let mut max_id = 0;
 
         loop {
@@ -449,7 +451,7 @@ impl Epic {
             }
 
             // Decode story tag and read bytes from file, propagate errors when they occur
-            let (story_id, story_name_len, story_description_len, story_status_byte) =
+            let (story_id, _, story_name_len, story_description_len, story_status_byte) =
                 <Story as BytesEncode>::decode(&cur_story_tag);
             let mut story_name_bytes = vec![0_u8; story_name_len as usize];
             let mut story_description_bytes = vec![0_u8; story_description_len as usize];
@@ -479,7 +481,7 @@ impl Epic {
             // Insert parsed story into hashmap
             let story_status = Status::try_from(story_status_byte)?;
 
-            let story = Story::new(story_id, story_name, story_description, story_status);
+            let story = Story::new(story_id, id, story_name, story_description, story_status);
 
             stories.insert(story_id, story);
             *max_id = u32::max(*max_id, story_id);
@@ -716,8 +718,8 @@ unsafe impl Send for Epic {}
 unsafe impl Sync for Epic {}
 
 impl BytesEncode for Epic {
-    type Tag = EncodeTag;
-    type DecodedTag = DecodeTag;
+    type Tag = EpicEncodeTag;
+    type DecodedTag = EpicDecodeTag;
     fn encode(&self) -> Self::Tag {
         let mut encoded_bytes = [0_u8; 13];
 
@@ -766,16 +768,23 @@ impl BytesEncode for Epic {
 /// A struct that encapsulates all pertinent information and behaviors for a single story.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Story {
+    /// The id of `self`
     id: u32,
+    /// The `Epic` id that contains the `Story`
+    epic_id: u32,
+    /// Name of the `Story`
     name: String,
+    /// Description of the `Story`
     description: String,
+    /// The current status of the `Story`
     status: Status,
 }
 
 impl Story {
-    pub fn new(id: u32, name: String, description: String, status: Status) -> Story {
+    pub fn new(id: u32, epic_id: u32, name: String, description: String, status: Status) -> Story {
         Story {
             id,
+            epic_id,
             name,
             description,
             status,
@@ -786,6 +795,9 @@ impl Story {
     pub fn id(&self) -> u32 {
         self.id
     }
+
+    /// Returns the epic id that contains `self`
+    pub fn epic_id(&self) -> u32 { self.epic_id }
 
     /// Returns a shared reference to the name of `self`
     pub fn name(&self) -> &String {
@@ -817,25 +829,30 @@ unsafe impl Send for Story {}
 unsafe impl Sync for Story {}
 
 impl BytesEncode for Story {
-    type Tag = EncodeTag;
+    type Tag = StoryEncodeTag;
 
-    type DecodedTag = DecodeTag;
+    type DecodedTag = StoryDecodeTag;
 
     fn encode(&self) -> Self::Tag {
-        let mut encoded_bytes = [0_u8; 13];
+        let mut encoded_bytes = [0_u8; 17];
         for i in 0..4 {
             encoded_bytes[i] = ((self.id >> (i * 8)) & 0xff) as u8;
         }
-        let name_bytes_len = self.name.as_bytes().len();
+
         for i in 4..8 {
+            encoded_bytes[i] = ((self.epic_id >> ((i % 4) * 8)) & 0xff) as u8;
+        }
+
+        let name_bytes_len = self.name.as_bytes().len();
+        for i in 8..12 {
             encoded_bytes[i] = (((name_bytes_len as u32) >> (i % 4) * 8) & 0xff) as u8;
         }
         let description_bytes_len = self.description.as_bytes().len();
-        for i in 8..12 {
+        for i in 12..16 {
             encoded_bytes[i] = (((description_bytes_len as u32) >> (i % 4) * 8) & 0xff) as u8;
         }
         let status_byte: u8 = self.status.into();
-        encoded_bytes[12] = status_byte;
+        encoded_bytes[16] = status_byte;
         encoded_bytes
     }
 
@@ -844,16 +861,20 @@ impl BytesEncode for Story {
         for i in 0..4 {
             id ^= (tag[i] as u32) << (i * 8);
         }
-        let mut name_len = 0;
+        let mut epic_id = 0;
         for i in 4..8 {
+            epic_id ^= (tag[i] as u32) << ((i % 4) * 8);
+        }
+        let mut name_len = 0;
+        for i in 8..12 {
             name_len ^= (tag[i] as u32) << ((i % 4) * 8);
         }
         let mut description_len = 0;
-        for i in 8..12 {
+        for i in 12..16 {
             description_len ^= (tag[i] as u32) << ((i % 4) * 8);
         }
-        let status_byte = tag[12];
-        (id, name_len, description_len, status_byte)
+        let status_byte = tag[16];
+        (id, epic_id, name_len, description_len, status_byte)
     }
 }
 
@@ -945,19 +966,46 @@ impl std::fmt::Display for DbError {
 
 impl std::error::Error for DbError {}
 
-/// The decoded tag type that both `Epic`s and `Story`s get decoded from. A tuple that represents
+/// The decoded tag type that `Epic`s get decoded from. A tuple that represents
 /// the id of the object, the length (in bytes) of its name and description, and a byte that
 /// represents the status of the object.
-type DecodeTag = (u32, u32, u32, u8);
+pub type EpicDecodeTag = (u32, u32, u32, u8);
 
-impl TagDecoding for DecodeTag {}
+impl TagDecoding for EpicDecodeTag {}
 
-/// The encoded tag type that both `Epic`s and `Story`s get encoded into. An array of bytes,
+impl TagDecoding for &EpicDecodeTag {}
+
+/// The encoded tag type that `Epic`s get encoded into. An array of bytes,
 /// that holds the encoded id of the object, the length (in bytes) of the name and description of
 /// the object and a status byte that represents the object's status.
-type EncodeTag = [u8; 13];
+pub type EpicEncodeTag = [u8; 13];
 
-impl TagEncoding for EncodeTag {}
+impl TagEncoding for EpicEncodeTag {}
+
+impl TagEncoding for &EpicEncodeTag {}
+
+/// The decoded tag type that `Story`s get decoded from. A tuple that represents
+/// the id of the object, the id of the `Epic` that contains the given `Story`,
+/// the length (in bytes) of its name and description, and a byte that
+/// represents the status of the object.
+pub type StoryDecodeTag = (u32, u32, u32, u32, u8);
+
+impl TagDecoding for StoryDecodeTag {}
+
+impl TagDecoding for &StoryDecodeTag {}
+
+
+/// The encoded tag type that `Story`s get encoded into. An array of bytes,
+/// that holds the encoded id of the object, the id of the `Epic` that contains the given `Story`
+/// the length (in bytes) of the name and description of
+/// the object and a status byte that represents the object's status.
+pub type StoryEncodeTag = [u8; 17];
+
+impl TagEncoding for StoryEncodeTag {}
+
+impl TagEncoding for &StoryEncodeTag {}
+
+
 
 #[cfg(test)]
 mod test {
@@ -967,6 +1015,7 @@ mod test {
     fn create_story_should_work() {
         let story = Story::new(
             1,
+            0,
             String::from("Test Story 1"),
             String::from("A simple test story"),
             Status::Open,
@@ -978,6 +1027,7 @@ mod test {
     fn story_encode_decode_should_work() {
         let story = Story::new(
             1,
+            0,
             String::from("Test Story 1"),
             String::from("A simple test story"),
             Status::Open,
@@ -987,13 +1037,14 @@ mod test {
 
         println!("{:?}", story_tag);
 
-        assert_eq!(story_tag, [1, 0, 0, 0, 12, 0, 0, 0, 19, 0, 0, 0, 0]);
+        assert_eq!(story_tag, [1, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 19, 0, 0, 0, 0]);
 
         // Attempt to decode
-        let (story_id, story_name_len, story_description_len, story_status_byte) =
+        let (story_id, epic_id, story_name_len, story_description_len, story_status_byte) =
             <Story as BytesEncode>::decode(&story_tag);
 
         assert_eq!(1, story_id);
+        assert_eq!(0, epic_id);
         assert_eq!(12, story_name_len);
         assert_eq!(19, story_description_len);
         assert_eq!(0, story_status_byte);
@@ -1093,18 +1144,21 @@ mod test {
 
         let test_story1 = Story::new(
             3,
+            100,
             String::from("A Test Story"),
             String::from("A simple test story"),
             Status::Open,
         );
         let test_story2 = Story::new(
             4,
+            100,
             String::from("A test Story"),
             String::from("A simple test story"),
             Status::Open,
         );
         let test_story3 = Story::new(
             5,
+            100,
             String::from("A different test Story"),
             String::from("Another simple test story"),
             Status::InProgress,
@@ -1154,18 +1208,21 @@ mod test {
 
         let test_story1 = Story::new(
             6,
+            101,
             String::from("A Test Story"),
             String::from("A simple test story"),
             Status::Open,
         );
         let test_story2 = Story::new(
             7,
+            101,
             String::from("A test Story"),
             String::from("A simple test story"),
             Status::Open,
         );
         let test_story3 = Story::new(
             8,
+            101,
             String::from("A different test Story"),
             String::from("Another simple test story"),
             Status::InProgress,
@@ -1416,7 +1473,7 @@ mod test {
 
     #[test]
     fn test_story_as_bytes() {
-        let story = Story::new(1, "S1".to_string(), "TS1".to_string(), Status::Open);
+        let story = Story::new(1, 101,"S1".to_string(), "TS1".to_string(), Status::Open);
 
         let encoding = story.encode();
         println!("{:?}", encoding);
@@ -1426,7 +1483,7 @@ mod test {
 
         assert_eq!(
             bytes,
-            vec![1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 83, 49, 84, 83, 49]
+            vec![1, 0, 0, 0, 101, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 83, 49, 84, 83, 49]
         );
     }
 
@@ -1452,7 +1509,7 @@ mod test {
             vec![129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57]
         );
 
-        let story = Story::new(1, "S1".to_string(), "TS1".to_string(), Status::Open);
+        let story = Story::new(1, 129,"S1".to_string(), "TS1".to_string(), Status::Open);
 
         let _ = epic.add_story(story);
 
@@ -1464,7 +1521,7 @@ mod test {
             bytes,
             vec![
                 129, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 0, 69, 49, 50, 57, 84, 69, 49, 50, 57, 1, 0,
-                0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 83, 49, 84, 83, 49
+                0, 0, 129, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 83, 49, 84, 83, 49
             ]
         );
     }
