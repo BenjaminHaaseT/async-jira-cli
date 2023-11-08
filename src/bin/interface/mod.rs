@@ -165,19 +165,19 @@ impl Interface {
                 .await
                 .map_err(|_| UserError::ParseResponseError(String::from("unable to parse response from server correctly")))?;
 
-            let epic_detail_page = Box::new(StoryDetailPage::try_create(data)?);
+            let story_detail_page = Box::new(StoryDetailPage::try_create(data)?);
 
             println!("story with id: {} does not exist", story_id);
             println!();
 
-            epic_detail_page.print_page();
+            story_detail_page.print_page();
             assert!(!self.page_stack.is_empty());
 
             while self.page_stack.len() > 1 {
                 self.page_stack.pop();
             }
 
-            self.page_stack.push(epic_detail_page);
+            self.page_stack.push(story_detail_page);
         } else if type_and_flag & 512 != 0 {
             let mut data = vec![0; data_len as usize];
             stream.read_exact(data.as_mut_slice())

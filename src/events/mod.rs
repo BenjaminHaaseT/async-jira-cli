@@ -325,7 +325,7 @@ impl Event {
 
     /// Associated function, creates a tag that will parse as a `AddStory` variant from
     /// `epic_id`, `story_name` and `story_description`.
-    pub fn get_add_story_tag(epic_id: u32, story_name: &String, story_description: &String) -> [u8; 13] {
+    pub fn add_story_tag(epic_id: u32, story_name: &String, story_description: &String) -> [u8; 13] {
         let story_name_bytes_len = story_name.as_bytes().len();
         let story_description_bytes_len = story_description.as_bytes().len();
         let mut tag = [0; 13];
@@ -531,7 +531,7 @@ mod test {
         let test_epic_id = 2353;
         let story_name = String::from("Test Story");
         let story_description = String::from("A good test Story");
-        let tag = Event::get_add_story_tag(test_epic_id, &story_name, &story_description);
+        let tag = Event::add_story_tag(test_epic_id, &story_name, &story_description);
 
         println!("{:?}", tag);
         assert_eq!(tag, [32, 49, 9, 0, 0, 10, 0, 0, 0, 17, 0, 0, 0]);
@@ -542,7 +542,7 @@ mod test {
         let test_epic_id = 2353;
         let test_story_name = String::from("Test Story");
         let test_story_description = String::from("A good test Story");
-        let tag = Event::get_add_story_tag(test_epic_id, &test_story_name, &test_story_description);
+        let tag = Event::add_story_tag(test_epic_id, &test_story_name, &test_story_description);
         let test_client_id = Uuid::new_v4();
         let mut bytes = test_story_name.as_bytes().to_vec();
         bytes.extend_from_slice(test_story_description.as_bytes());

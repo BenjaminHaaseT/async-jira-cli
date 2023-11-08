@@ -26,6 +26,7 @@ pub enum UserError {
     ParseRequestOption,
     InvalidRequest,
     InvalidInput(String),
+    ParseInputError,
 }
 
 impl Display for UserError {
@@ -39,6 +40,7 @@ impl Display for UserError {
             UserError::ParseRequestOption => write!(f, "Unable to parse entered option, please try again"),
             UserError::InvalidRequest => write!(f, "Invalid request, please choose a valid option"),
             UserError::InvalidInput(s) => write!(f, "{s}"),
+            UserError::ParseInputError => write!(f, "Unable to parse input, please try again"),
         }
     }
 }

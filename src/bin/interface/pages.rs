@@ -50,7 +50,7 @@ impl HomePage {
 
             // Remove new line character from name
             epic_name.pop();
-            if epic_name.as_bytes().len() as u32 > u32::MAX {
+            if epic_name.as_bytes().len() > u32::MAX as usize {
                 return Err(UserError::InvalidInput(String::from("Invalid input, epic's name is to large")));
             }
             println!();
@@ -59,7 +59,7 @@ impl HomePage {
 
             print!("epic description: ");
 
-            if epic_description.as_bytes().len() as u32 > u32::MAX {
+            if epic_description.as_bytes().len()  > u32::MAX as usize {
                 return Err(UserError::InvalidInput(String::from("Invalid input, epic's description is to large")));
             }
 
@@ -248,13 +248,13 @@ impl EpicDetailPage {
             let mut user_choice = String::new();
 
             let request_bytes = loop {
-                input_reader.read_line(&mut input_reader)
+                input_reader.read_line(&mut user_choice)
                     .await
                     .map_err(|_| UserError::ParseRequestOption)?;
                 user_choice.pop();
                 if user_choice.to_lowercase() == "y" {
                     break Event::delete_epic_tag(self.frame.id).to_vec();
-                } else if user_choice.to_lowercse() == "n" {
+                } else if user_choice.to_lowercase() == "n" {
                     break vec![];
                 } else {
                     println!("please choose a valid option");
@@ -267,10 +267,38 @@ impl EpicDetailPage {
             Ok(Some(request_bytes))
         } else if request_option.to_lowercase() == "c" {
             // Create a new story
-            todo!()
+            let mut input_reader = input_reader;
+
+            let mut story_name = String::new();
+            print!("story name: ");
+            input_reader.read_to_string(&mut story_name)
+                .await
+                .map_err(|_| UserError::ParseRequestOption)?;
+
+            if story_name.as_bytes().len()  > u32::MAX as usize {
+                return Err(UserError::InvalidInput(String::from("invalid input, story's name is too large")));
+            }
+            println!();
+
+            let mut story_description = String::new();
+            print!("story description: ");
+            input_reader.read_to_string(&mut story_description)
+                .await
+                .map_err(|_| UserError::ParseRequestOption)?;
+
+            if story_description.as_bytes().len() > u32::MAX as usize {
+                return Err(UserError::InvalidInput(String::from("invalid input, story's description is too large")));
+            }
+
+            let mut request_bytes = Event::add_story_tag(self.frame.id, &story_name, &story_description).to_vec();
+            request_bytes.extend_from_slice(story_name.as_bytes());
+            request_bytes.extend_from_slice(story_description.as_bytes());
+
+            Ok(Some(request_bytes))
         } else if let Ok(story_id) = request_option.parse::<u32>() {
             // navigate to story detail page
-            todo!()
+            let request_bytes = Event::get_story_tag(self.frame.id, story_id).to_vec();
+            Ok(Some(request_bytes))
         } else {
             Err(UserError::InvalidRequest)
         }
@@ -326,6 +354,7 @@ impl Page for EpicDetailPage {
 /// Represents page to display the details of a single story
 #[derive(Debug)]
 pub struct StoryDetailPage {
+    /// The frame of the `Story` that the `StoryDetailPage` is representing
     story_frame: StoryFrame,
 }
 
@@ -348,6 +377,71 @@ impl StoryDetailPage {
 
         Ok(StoryDetailPage { story_frame })
     }
+
+    /// Attempts to create a vector of bytes that encodes the request received from user input.
+    /// Takes `request_option` which represents the user request and `input_reader` which is the
+    /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
+    /// the request was created successfully, otherwise returns `Err`
+    pub async fn parse_request<R: ReadExt + Unpin>(&self, request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
+        if request_option.to_lowercase() == "p" {
+            Ok(None)
+        } else if request_option.to_lowercase() == "u" {
+            let mut input_reader = input_reader;
+            let mut status_buf = String::new();
+
+            // Validation loop for getting new status from the user
+            let new_status = loop {
+                self.print_status_update_menu();
+                match input_reader.read_to_string(&mut status_buf).await {
+                    Ok(_n) => {
+                        // Remove new line character from buffer
+                        status_buf.pop();
+                        match status_buf.parse::<u8>() {
+                            Ok(s) if (0..4).contains(&s) => break s,
+                            Ok(s)  => {
+                                println!("error parsing input as a valid status, please try again");
+                                eprintln!("error parsing input as a valid status, please try again");
+                                status_buf = String::new();
+                                continue;
+                            }
+                            Err(e) => {
+                                println!("error parsing input, please try again");
+                                eprintln!("error parsing input, please try again");
+                                status_buf = String::new();
+                                continue;
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        println!("error reading input, please try again");
+                        eprintln!("error reading input, please try again");
+                        status_buf = String::new();
+                        continue;
+                    }
+                }
+            };
+
+            // let mut request_bytes = Event::get_update_story_status_tag()
+            //TODO: fix encoding of stories into bytes, make sure to encode parent's epic id as well
+
+            todo!()
+        } else if request_option.to_lowercase() == "d" {
+            todo!()
+        } else {
+            Err(UserError::InvalidRequest)
+        }
+    }
+
+    /// A helper function for displaying the status selection menu
+    fn print_status_update_menu(&self) {
+        println!("please select the status you would like to update story {} with", self.story_frame.id);
+        println!("{:<11} - 0", "Open");
+        println!("{:<11} - 1", "In Progress");
+        println!("{:<11} - 2", "Resolved");
+        println!("{:<11} - 3", "Closed");
+    }
+
+
 }
 
 impl Page for StoryDetailPage {

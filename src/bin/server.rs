@@ -325,6 +325,9 @@ async fn broker(
                         peer_id,
                     );
                     epic.write_async().await?;
+                    // task::spawn_blocking(|| {
+                    //     epic.write()
+                    // }).await?;
                 } else {
                     let _ = log_connection_error(
                         client_sender
