@@ -1096,7 +1096,7 @@ mod test {
 
     #[test]
     fn test_epic_create_write_and_load_from_file() {
-        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
+        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database/test_epics");
         test_file_path.push("epic99.txt");
 
         let mut epic = Epic::new(
@@ -1128,7 +1128,7 @@ mod test {
 
     #[test]
     fn test_epic_create_write_load_and_add_stories() {
-        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
+        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database/test_epics");
         test_file_path.push("epic2.txt");
 
         let mut epic = Epic::new(
@@ -1194,7 +1194,7 @@ mod test {
 
     #[test]
     fn test_epic_delete_story() {
-        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
+        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database/test_epics");
         test_file_path.push("epic101.txt");
 
         let mut epic = Epic::new(
@@ -1260,7 +1260,7 @@ mod test {
 
     #[test]
     fn test_epic_update_status() {
-        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database/test_epics");
+        let mut test_file_path = PathBuf::from("/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database/test_epics");
         test_file_path.push("epic102.txt");
 
         let mut epic = Epic::new(
@@ -1313,7 +1313,7 @@ mod test {
     #[test]
     fn test_create_db_state_add_epics_write_and_read() {
         let mut db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_db1.txt".to_string(),
             "test_epics1".to_string(),
@@ -1339,7 +1339,7 @@ mod test {
         assert!(db_state.write().is_ok());
 
         let mut db_state_prime_result = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_db1.txt".to_string(),
             "test_epics1".to_string(),
@@ -1357,7 +1357,7 @@ mod test {
     #[test]
     fn test_db_state_add_delete_epic() {
         let mut db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_db2.txt".to_string(),
             "test_epics2".to_string(),
@@ -1375,7 +1375,7 @@ mod test {
         assert!(db_state.write().is_ok());
 
         let mut db_state = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_db2.txt".to_string(),
             "test_epics2".to_string(),
@@ -1395,7 +1395,7 @@ mod test {
         assert!(db_state.write().is_ok());
 
         let mut db_state_loaded = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_db2.txt".to_string(),
             "test_epics2".to_string(),
@@ -1410,12 +1410,10 @@ mod test {
     #[test]
     fn test_db_state_add_delete_story() {
         let mut db_state = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
-                .to_string(),
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database".to_string(),
             "test_db.txt".to_string(),
             "test_epics".to_string(),
-        )
-        .expect("should load");
+        ).expect("should load");
 
         println!("{:?}", db_state);
 
@@ -1453,7 +1451,7 @@ mod test {
         assert!(db_state.write().is_ok());
 
         let mut db_state = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_db.txt".to_string(),
             "test_epics".to_string(),
@@ -1578,7 +1576,7 @@ mod test {
     fn test_async_db_state_read_and_write() {
         use async_std::task;
         let mut db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db1.txt".to_string(),
             "async_test_epics1".to_string(),
@@ -1606,7 +1604,7 @@ mod test {
         assert!(handle.is_ok());
 
         let mut db_state_loaded_res = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db1.txt".to_string(),
             "async_test_epics1".to_string(),
@@ -1621,7 +1619,7 @@ mod test {
     fn test_async_db_state_read_write_delete_epic() {
         use async_std::task;
         let mut db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db2.txt".to_string(),
             "async_test_epics2".to_string(),
@@ -1653,7 +1651,7 @@ mod test {
         assert!(handle.is_ok());
 
         let mut db_state_loaded_res = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db2.txt".to_string(),
             "async_test_epics2".to_string(),
@@ -1678,7 +1676,7 @@ mod test {
         assert!(handle.is_ok());
 
         let db_state_loaded_res = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db2.txt".to_string(),
             "async_test_epics2".to_string(),
@@ -1695,7 +1693,7 @@ mod test {
     fn test_async_db_read_write_add_story() {
         use async_std::task;
         let mut db_state = DbState::new(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db3.txt".to_string(),
             "async_test_epics3".to_string(),
@@ -1737,7 +1735,7 @@ mod test {
         assert!(task::block_on(db_state.write_async()).is_ok());
 
         let mut db_state_loaded_res = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db3.txt".to_string(),
             "async_test_epics3".to_string(),
@@ -1772,7 +1770,7 @@ mod test {
 
         // Ensure changes persist
         let mut db_state_loaded_res = DbState::load(
-            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/bin/test_database"
+            "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db3.txt".to_string(),
             "async_test_epics3".to_string(),
