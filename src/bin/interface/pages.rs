@@ -49,7 +49,7 @@ impl HomePage {
                 .map_err(|_| UserError::ParseInputError)?;
 
             // Remove new line character from name
-            epic_name.pop();
+            epic_name = epic_name.trim_end_matches('\n').to_string();
 
             // Ensure the length of the name can fit inside 8 bytes
             if epic_name.as_bytes().len() > u32::MAX as usize {
@@ -66,7 +66,7 @@ impl HomePage {
                 .map_err(|_| UserError::ParseInputError)?;
 
             // Remove the new line character from description
-            epic_description.pop();
+            epic_description = epic_description.trim_end_matches('\n').to_string();
 
             // Ensure the length of the description can fit inside 8 bytes
             if epic_description.as_bytes().len()  > u32::MAX as usize {
@@ -215,37 +215,31 @@ impl EpicDetailPage {
                 match input_reader.read_line(&mut new_status_buf).await {
                     Ok(n) if n > 0 => {
                         // Remove new line character from buffer
-                        new_status_buf.pop();
+                        new_status_buf = new_status_buf.trim_end().to_string();
                         match new_status_buf.parse::<u8>() {
                             Ok(s) if (0..4u8).contains(&s) => {
                                 break s;
                             }
                             Ok(s) => {
                                 println!("invalid status selection, please try again");
-                                new_status_buf = String::new();
-                                continue;
+                                eprintln!("invalid status selection, please try again");
                             }
                             Err(_) => {
                                 println!("unable to parse status selection, please try again");
                                 eprintln!("unable to parse status selection, please try again");
-                                new_status_buf = String::new();
-                                continue;
                             }
                         }
                     }
                     Ok(n) => {
                         println!("no input entered, please try again");
                         eprintln!("no input entered, please try again");
-                        new_status_buf = String::new();
-                        continue;
                     }
                     Err(_) => {
                         println!("unable to read input, please try again");
                         eprintln!("unable to read input, please try again");
-                        new_status_buf = String::new();
-                        continue;
                     }
                 }
+                new_status_buf.clear();
             };
             // Create the request bytes
             let request_bytes = Event::get_update_epic_status_tag(self.frame.id, new_status).to_vec();
@@ -260,30 +254,25 @@ impl EpicDetailPage {
             let request_bytes = loop {
                 match input_reader.read_line(&mut user_final_choice).await {
                     Ok(n) if n > 0 => {
-                        match user_final_choice.trim().to_lowercase().as_str() {
+                        match user_final_choice.trim_end().to_lowercase().as_str() {
                             "y" => break Event::delete_epic_tag(self.frame.id).to_vec(),
                             "n" => break vec![],
                             _ => {
                                 println!("please choose a valid option");
                                 println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
-                                user_final_choice.clear();
-                                continue;
                             }
                         }
                     }
                     Ok(n) => {
                         println!("no input entered, please choose a valid option");
                         eprintln!("no input entered, please choose a valid option");
-                        user_final_choice.clear();
-                        continue;
                     }
                     Err(e) => {
                         println!("unable to read input, please try again");
                         eprintln!("unable to read input, please try again");
-                        user_final_choice.clear();
-                        continue;
                     }
                 }
+                user_final_choice.clear();
             };
 
             Ok(Some(request_bytes))
@@ -299,7 +288,7 @@ impl EpicDetailPage {
                 .map_err(|_| UserError::ParseInputError)?;
 
             // remove new line character at the end
-            story_name.pop();
+            story_name = story_name.trim_end_matches('\n').to_string();
 
             // ensure the length of story_name in bytes can fit within 8 bytes
             if story_name.as_bytes().len()  > u32::MAX as usize {
@@ -316,7 +305,7 @@ impl EpicDetailPage {
                 .map_err(|_| UserError::ParseInputError)?;
 
             // remove new line character at the end
-            story_description.pop();
+            story_description = story_description.trim_end_matches('\n').to_string();
 
             if story_description.as_bytes().len() > u32::MAX as usize {
                 return Err(UserError::InvalidInput(String::from("invalid input, story's description is too large")));
@@ -427,33 +416,27 @@ impl StoryDetailPage {
                 match input_reader.read_to_string(&mut status_buf).await {
                     Ok(_n) => {
                         // Remove new line character from buffer
-                        status_buf.pop();
-                        match status_buf.parse::<u8>() {
+                        match status_buf.trim_end().parse::<u8>() {
                             Ok(s) if (0..4).contains(&s) => break s,
-                            Ok(s)  => {
+                            Ok(_s)  => {
                                 println!("error parsing input as a valid status, please try again");
                                 eprintln!("error parsing input as a valid status, please try again");
-                                status_buf = String::new();
-                                continue;
                             }
                             Err(e) => {
                                 println!("error parsing input, please try again");
                                 eprintln!("error parsing input, please try again");
-                                status_buf = String::new();
-                                continue;
                             }
                         }
                     }
                     Err(_) => {
                         println!("error reading input, please try again");
                         eprintln!("error reading input, please try again");
-                        status_buf = String::new();
-                        continue;
                     }
                 }
+                status_buf.clear();
             };
 
-            let mut request_bytes = Event::get_update_story_status_tag(self.story_frame.epic_id, self.story_frame.id, new_status).to_vec();
+            let request_bytes = Event::get_update_story_status_tag(self.story_frame.epic_id, self.story_frame.id, new_status).to_vec();
             Ok(Some(request_bytes))
         } else if request_option.to_lowercase() == "d" {
             let mut user_final_choice = String::new();
@@ -462,8 +445,7 @@ impl StoryDetailPage {
             let request_bytes = loop {
                 match input_reader.read_to_string(&mut user_final_choice).await {
                     Ok(n) if n > 0 => {
-                        user_final_choice.pop();
-                        match user_final_choice.as_str() {
+                        match user_final_choice.trim_end() {
                             "y" => break Event::get_delete_story_tag(self.story_frame.epic_id, self.story_frame.id).to_vec(),
                             "n" => break vec![],
                             _ => {
