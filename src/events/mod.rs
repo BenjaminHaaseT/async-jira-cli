@@ -108,7 +108,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `AddEpic` variant.
-    async fn try_create_add_epic<R: ReadExt + Unpin>(
+    pub async fn try_create_add_epic<R: ReadExt + Unpin>(
         client_id: Uuid,
         tag: &[u8; 13],
         stream: R,
@@ -145,7 +145,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `DeleteEpic` variant.
-    async fn try_create_delete_epic(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
+    pub async fn try_create_delete_epic(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         Ok(Event::DeleteEpic {
             peer_id: client_id,
@@ -154,7 +154,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `GetEpic` variant.
-    async fn try_create_get_epic(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
+    pub async fn try_create_get_epic(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         Ok(Event::GetEpic {
             peer_id: client_id,
@@ -163,7 +163,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `UpdateEpicStatus` variant.
-    async fn try_create_update_epic_status(
+    pub async fn try_create_update_epic_status(
         client_id: Uuid,
         tag: &[u8; 13],
     ) -> Result<Event, DbError> {
@@ -178,7 +178,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `GetStory` variant.
-    async fn try_create_get_story(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
+    pub async fn try_create_get_story(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         let story_id = parse_4_bytes(&tag[5..9]);
         Ok(Event::GetStory {
@@ -189,7 +189,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `AddStory` variant.
-    async fn try_create_add_story<R: ReadExt + Unpin>(
+    pub async fn try_create_add_story<R: ReadExt + Unpin>(
         client_id: Uuid,
         tag: &[u8; 13],
         stream: R,
@@ -231,7 +231,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `DeleteStory` variant.
-    async fn try_create_delete_story(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
+    pub async fn try_create_delete_story(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         let story_id = parse_4_bytes(&tag[5..9]);
         Ok(Event::DeleteStory {
@@ -242,7 +242,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `UpdateStoryStatus` variant.
-    async fn try_create_update_story_status(
+    pub async fn try_create_update_story_status(
         client_id: Uuid,
         tag: &[u8; 13],
     ) -> Result<Event, DbError> {

@@ -540,6 +540,9 @@ fn justify_text_with_ellipses(width: usize, text: &String) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
+    use async_std::io::{Cursor, ReadExt, BufRead};
+    use async_std::task::block_on;
+    use uuid::Uuid;
 
     #[test]
     fn test_justify_text_with_ellipses() {
@@ -701,6 +704,115 @@ mod test {
         let test_story_detail_page = test_story_detail_page_res.unwrap();
 
         test_story_detail_page.print_page();
+    }
+
+    #[test]
+    fn test_home_page_parse_request() {
+        // Test quit option, should return Ok(None)
+        println!("Testing quit...");
+        let user_input = "q";
+        let mut input_reader = Cursor::new(vec![1u8, 2, 3, 4, 5]);
+        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_none());
+
+        let user_input = "Q";
+        let mut input_reader = Cursor::new(vec![1u8, 2, 3, 4, 5]);
+        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_none());
+
+        // Test create option, should return Ok(Some(Vec<u8>)),
+        println!("Testing epic creation...");
+        let user_input = "c";
+        let mut input_reader = Cursor::new(String::from("Test Epic\nA good epic for testing purposes\n").into_bytes());
+        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_some());
+
+        // Attempt to parse the encoded request
+        let mut request_cursor = Cursor::new(request.unwrap());
+        let mut tag_buf = [0u8; 13];
+        let res = block_on(request_cursor.read_exact(&mut tag_buf));
+        println!("{:?}", res);
+        assert!(res.is_ok());
+
+        let Ok(Event::AddEpic {peer_id, epic_name, epic_description}) =
+            block_on(Event::try_create_add_epic(Uuid::new_v4(), &tag_buf, request_cursor))
+        else { panic!("event was not created correctly") };
+
+        assert_eq!(epic_name.as_str(), "Test Epic");
+        assert_eq!(epic_description.as_str(), "A good epic for testing purposes");
+
+        let user_input = "C";
+        let mut input_reader = Cursor::new(String::from("Test Epic\nA good epic for testing purposes").into_bytes());
+        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_some());
+
+        // Attempt to parse the encoded request
+        let mut request_cursor = Cursor::new(request.unwrap());
+        let mut tag_buf = [0u8; 13];
+        let res = block_on(request_cursor.read_exact(&mut tag_buf));
+        println!("{:?}", res);
+        assert!(res.is_ok());
+
+        let Ok(Event::AddEpic {peer_id, epic_name, epic_description}) =
+            block_on(Event::try_create_add_epic(Uuid::new_v4(), &tag_buf, request_cursor))
+            else { panic!("event was not created correctly") };
+
+        assert_eq!(epic_name.as_str(), "Test Epic");
+        assert_eq!(epic_description.as_str(), "A good epic for testing purposes");
+
+        // Test getting epic request
+        println!("Testing get epic option...");
+        let user_input = "97";
+        let mut input_reader = Cursor::new(vec![0u8]);
+        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_some());
+
+        let mut request_cursor = Cursor::new(request.unwrap());
+        let mut tag_buf = [0u8; 13];
+        let res = block_on(request_cursor.read_exact(&mut tag_buf));
+
+        println!("{:?}", res);
+        assert!(res.is_ok());
+
+        let Ok(Event::GetEpic {peer_id, epic_id}) = block_on(Event::try_create_get_epic(Uuid::new_v4(), &tag_buf))
+                            else { panic!("event was not created correctly") };
+
+        assert_eq!(epic_id, 97);
+
+        // Testing invalid input option
+        let user_input = "djowalk";
+        let mut input_reader = Cursor::new(Vec::new());
+        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+        println!("{:?}", request);
+        assert!(request.is_err());
     }
 }
 
