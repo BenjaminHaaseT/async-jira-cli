@@ -42,14 +42,16 @@ impl HomePage {
             let mut input_reader = input_reader;
             let mut epic_name = String::new();
 
-            print!("epic name: ");
+            println!("epic name:");
 
             let _ = input_reader.read_line(&mut epic_name)
                 .await
-                .map_err(|_| UserError::ParseRequestOption)?;
+                .map_err(|_| UserError::ParseInputError)?;
 
             // Remove new line character from name
             epic_name.pop();
+
+            // Ensure the length of the name can fit inside 8 bytes
             if epic_name.as_bytes().len() > u32::MAX as usize {
                 return Err(UserError::InvalidInput(String::from("Invalid input, epic's name is to large")));
             }
@@ -57,24 +59,24 @@ impl HomePage {
 
             let mut epic_description = String::new();
 
-            print!("epic description: ");
-
-            if epic_description.as_bytes().len()  > u32::MAX as usize {
-                return Err(UserError::InvalidInput(String::from("Invalid input, epic's description is to large")));
-            }
+            println!("epic description: ");
 
             let _ = input_reader.read_line(&mut epic_description)
                 .await
-                .map_err(|_| UserError::ParseRequestOption)?;
+                .map_err(|_| UserError::ParseInputError)?;
 
             // Remove the new line character from description
             epic_description.pop();
+
+            // Ensure the length of the description can fit inside 8 bytes
+            if epic_description.as_bytes().len()  > u32::MAX as usize {
+                return Err(UserError::InvalidInput(String::from("Invalid input, epic's description is to large")));
+            }
 
             // Get the bytes for the request from the tag, name and description
             let mut request_bytes = Event::add_epic_tag(&epic_name, &epic_description).to_vec();
             request_bytes.extend_from_slice(epic_name.as_bytes());
             request_bytes.extend_from_slice(epic_description.as_bytes());
-
             Ok(Some(request_bytes))
         } else if let Ok(id) = request_option.parse::<u32>() {
             // User has selected to request details for an epic
@@ -206,11 +208,12 @@ impl EpicDetailPage {
             // Update epic's status in this case
             let mut input_reader = input_reader;
             let mut new_status_buf = String::new();
-            // read the new status from the user
+
+            // read the new status from the user, use a validation loop
             let new_status = loop {
                 self.print_status_update_menu();
                 match input_reader.read_line(&mut new_status_buf).await {
-                    Ok(_n) => {
+                    Ok(n) if n > 0 => {
                         // Remove new line character from buffer
                         new_status_buf.pop();
                         match new_status_buf.parse::<u8>() {
@@ -230,9 +233,15 @@ impl EpicDetailPage {
                             }
                         }
                     }
+                    Ok(n) => {
+                        println!("no input entered, please try again");
+                        eprintln!("no input entered, please try again");
+                        new_status_buf = String::new();
+                        continue;
+                    }
                     Err(_) => {
-                        println!("unable to parse selection, please try again");
-                        eprintln!("unable to parse selection, please try again");
+                        println!("unable to read input, please try again");
+                        eprintln!("unable to read input, please try again");
                         new_status_buf = String::new();
                         continue;
                     }
@@ -246,22 +255,34 @@ impl EpicDetailPage {
 
             // Delete the epic
             println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
-            let mut user_choice = String::new();
+            let mut user_final_choice = String::new();
 
             let request_bytes = loop {
-                input_reader.read_line(&mut user_choice)
-                    .await
-                    .map_err(|_| UserError::ParseRequestOption)?;
-                user_choice.pop();
-                if user_choice.to_lowercase() == "y" {
-                    break Event::delete_epic_tag(self.frame.id).to_vec();
-                } else if user_choice.to_lowercase() == "n" {
-                    break vec![];
-                } else {
-                    println!("please choose a valid option");
-                    println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
-                    user_choice = String::new();
-                    continue;
+                match input_reader.read_line(&mut user_final_choice).await {
+                    Ok(n) if n > 0 => {
+                        match user_final_choice.trim().to_lowercase().as_str() {
+                            "y" => break Event::delete_epic_tag(self.frame.id).to_vec(),
+                            "n" => break vec![],
+                            _ => {
+                                println!("please choose a valid option");
+                                println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
+                                user_final_choice.clear();
+                                continue;
+                            }
+                        }
+                    }
+                    Ok(n) => {
+                        println!("no input entered, please choose a valid option");
+                        eprintln!("no input entered, please choose a valid option");
+                        user_final_choice.clear();
+                        continue;
+                    }
+                    Err(e) => {
+                        println!("unable to read input, please try again");
+                        eprintln!("unable to read input, please try again");
+                        user_final_choice.clear();
+                        continue;
+                    }
                 }
             };
 
@@ -269,23 +290,33 @@ impl EpicDetailPage {
         } else if request_option.to_lowercase() == "c" {
             // Create a new story
             let mut input_reader = input_reader;
-
             let mut story_name = String::new();
-            print!("story name: ");
+
+            println!("story name:");
+
             input_reader.read_to_string(&mut story_name)
                 .await
-                .map_err(|_| UserError::ParseRequestOption)?;
+                .map_err(|_| UserError::ParseInputError)?;
 
+            // remove new line character at the end
+            story_name.pop();
+
+            // ensure the length of story_name in bytes can fit within 8 bytes
             if story_name.as_bytes().len()  > u32::MAX as usize {
                 return Err(UserError::InvalidInput(String::from("invalid input, story's name is too large")));
             }
+
             println!();
 
             let mut story_description = String::new();
-            print!("story description: ");
+            println!("story description: ");
+
             input_reader.read_to_string(&mut story_description)
                 .await
-                .map_err(|_| UserError::ParseRequestOption)?;
+                .map_err(|_| UserError::ParseInputError)?;
+
+            // remove new line character at the end
+            story_description.pop();
 
             if story_description.as_bytes().len() > u32::MAX as usize {
                 return Err(UserError::InvalidInput(String::from("invalid input, story's description is too large")));
@@ -422,12 +453,37 @@ impl StoryDetailPage {
                 }
             };
 
-            // let mut request_bytes = Event::get_update_story_status_tag()
-            //TODO: fix encoding of stories into bytes, make sure to encode parent's epic id as well
-
-            todo!()
+            let mut request_bytes = Event::get_update_story_status_tag(self.story_frame.epic_id, self.story_frame.id, new_status).to_vec();
+            Ok(Some(request_bytes))
         } else if request_option.to_lowercase() == "d" {
-            todo!()
+            let mut user_final_choice = String::new();
+            let mut input_reader = input_reader;
+            println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
+            let request_bytes = loop {
+                match input_reader.read_to_string(&mut user_final_choice).await {
+                    Ok(n) if n > 0 => {
+                        user_final_choice.pop();
+                        match user_final_choice.as_str() {
+                            "y" => break Event::get_delete_story_tag(self.story_frame.epic_id, self.story_frame.id).to_vec(),
+                            "n" => break vec![],
+                            _ => {
+                                println!("please choose a valid option");
+                                println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
+                            }
+                        }
+                    }
+                    Ok(n) => {
+                        println!("no input entered, please try again");
+                        eprintln!("no input entered, please try again");
+                    }
+                    Err(e) => {
+                        println!("error reading input, please try again");
+                        eprintln!("error reading input, please try again");
+                    }
+                }
+                user_final_choice.clear();
+            };
+            Ok(Some(request_bytes))
         } else {
             Err(UserError::InvalidRequest)
         }
@@ -441,8 +497,6 @@ impl StoryDetailPage {
         println!("{:<11} - 2", "Resolved");
         println!("{:<11} - 3", "Closed");
     }
-
-
 }
 
 impl Page for StoryDetailPage {
@@ -597,8 +651,8 @@ mod test {
 
         epic_detail_page.print_page();
 
-        epic_detail_page.story_frames.push(StoryFrame { id: 1, name: "Test Story".to_string(), description: "A simple test Story".to_string(), status: Status::Open });
-        epic_detail_page.story_frames.push(StoryFrame { id: 33, name: "Another Test Story".to_string(), description: "Another simple test Story".to_string(), status: Status::InProgress });
+        epic_detail_page.story_frames.push(StoryFrame { id: 1, epic_id: 0, name: "Test Story".to_string(), description: "A simple test Story".to_string(), status: Status::Open });
+        epic_detail_page.story_frames.push(StoryFrame { id: 33, epic_id: 0, name: "Another Test Story".to_string(), description: "Another simple test Story".to_string(), status: Status::InProgress });
 
         epic_detail_page.print_page();
     }
@@ -617,8 +671,8 @@ mod test {
             HashMap::new()
         );
 
-        let test_story1 = Story::new(107, String::from("Test Story"), String::from("Another good test story"), Status::Open);
-        let test_story2 = Story::new(108, String::from("Test Story"), String::from("Another good test story"), Status::Closed);
+        let test_story1 = Story::new(107, 99, String::from("Test Story"), String::from("Another good test story"), Status::Open);
+        let test_story2 = Story::new(108, 99, String::from("Test Story"), String::from("Another good test story"), Status::Closed);
 
         assert!(test_epic.add_story(test_story1).is_ok());
         assert!(test_epic.add_story(test_story2).is_ok());
@@ -635,7 +689,7 @@ mod test {
 
     #[test]
     fn test_try_create_story_detail_page() {
-        let test_story = Story::new(0, String::from("A test story"), String::from("A good story for testing purposes"), Status::Open);
+        let test_story = Story::new(0, 1,String::from("A test story"), String::from("A good story for testing purposes"), Status::Open);
         let story_bytes = test_story.as_bytes();
 
         let test_story_detail_page_res = StoryDetailPage::try_create(story_bytes);
@@ -654,7 +708,7 @@ mod test {
 
     #[test]
     fn test_print_page_story_detail_page() {
-        let test_story = Story::new(0, String::from("A test story"), String::from("A good story for testing purposes"), Status::Open);
+        let test_story = Story::new(0, 1,String::from("A test story"), String::from("A good story for testing purposes"), Status::Open);
         let story_bytes = test_story.as_bytes();
 
         let test_story_detail_page_res = StoryDetailPage::try_create(story_bytes);
