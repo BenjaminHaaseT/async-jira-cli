@@ -283,7 +283,7 @@ impl EpicDetailPage {
 
             println!("story name:");
 
-            input_reader.read_to_string(&mut story_name)
+            input_reader.read_line(&mut story_name)
                 .await
                 .map_err(|_| UserError::ParseInputError)?;
 
@@ -300,7 +300,7 @@ impl EpicDetailPage {
             let mut story_description = String::new();
             println!("story description: ");
 
-            input_reader.read_to_string(&mut story_description)
+            input_reader.read_line(&mut story_description)
                 .await
                 .map_err(|_| UserError::ParseInputError)?;
 
@@ -813,6 +813,167 @@ mod test {
         let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
         println!("{:?}", request);
         assert!(request.is_err());
+    }
+
+    #[test]
+    fn test_epic_detail_page_parse_request() {
+        use std::path::PathBuf;
+        use std::collections::HashMap;
+        // Create epic for creating the epic detail page
+        let epic = Epic::new(
+            0,
+            String::from("Test Epic"),
+            String::from("A goo epic for testing purposes"),
+            Status::Open,
+            PathBuf::new(),
+            HashMap::new()
+        );
+
+        // Represents a response from the server
+        // let mut response_cursor = Cursor::new(epic.as_bytes());
+
+        // attempt to parse the epic detail page from the `response`
+        let epic_detail_page_res = EpicDetailPage::try_create(epic.as_bytes());
+        println!("{:?}", epic_detail_page_res);
+        assert!(epic_detail_page_res.is_ok());
+
+        let epic_detail_page = epic_detail_page_res.unwrap();
+
+        println!("testing previous option...");
+        // Some empty request data
+        let mut request_data = Cursor::new(vec![]);
+        let request = block_on(epic_detail_page.parse_request("P", &mut request_data));
+        println!("{:?}", request);
+        assert!(request.is_ok());
+        // Should be None
+        assert!(request.unwrap().is_none());
+
+        println!("testing update option...");
+        let mut user_input = Cursor::new(String::from("3\n").into_bytes());
+        let request = block_on(epic_detail_page.parse_request("u", &mut user_input));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_some());
+
+        // Simulate reading the request from the user
+        let mut request_cursor = Cursor::new(request.unwrap());
+        // read the tag from the request
+        let mut tag_buf = [0; 13];
+        assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
+        // Attempt to parse an event from the request
+        let Ok(Event::UpdateEpicStatus {peer_id, epic_id, status}) = block_on(Event::try_create_update_epic_status(Uuid::new_v4(), &tag_buf)) else { panic!("unable to parse request correctly") };
+
+        assert_eq!(epic_id, 0);
+        assert_eq!(status, Status::Closed);
+
+        println!("testing delete epic option...");
+        let user_option = "d";
+        let mut user_input = Cursor::new(String::from("y\n").into_bytes());
+        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
+
+        println!("{:?}", user_input);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_some());
+
+        let mut request_cursor = Cursor::new(request.unwrap());
+        let mut tag_buf = [0; 13];
+        assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
+        let Ok(Event::DeleteEpic {peer_id, epic_id}) = block_on(Event::try_create_delete_epic(Uuid::new_v4(), &tag_buf)) else { panic!("unable to parse request correctly") };
+
+        assert_eq!(epic_id, 0);
+
+        println!("testing delete epic option with cancel...");
+        let user_option = "d";
+        let mut user_input = Cursor::new(String::from("n\n").into_bytes());
+        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_some());
+        // Should be empty
+        assert!(request.unwrap().is_empty());
+
+        println!("testing add story option...");
+        let user_option = "c";
+        let mut user_input = Cursor::new(String::from("Test Story\nA good story for testing purposes\n").into_bytes());
+        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_some());
+
+        let mut request_cursor = Cursor::new(request.unwrap());
+        let mut tag_buf=  [0; 13];
+        assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
+        let Ok(Event::AddStory {peer_id, epic_id, story_name, story_description}) = block_on(Event::try_create_add_story(Uuid::new_v4(), &tag_buf, &mut request_cursor)) else { panic!("unable to parse request correctly") };
+
+        assert_eq!(epic_id, 0);
+        assert_eq!(story_name, String::from("Test Story"));
+        assert_eq!(story_description, String::from("A good story for testing purposes"));
+
+        println!("testing get story detail option...");
+        let user_option = "97";
+        let mut user_input = Cursor::new(vec![]);
+        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_some());
+
+        let mut request_cursor = Cursor::new(request.unwrap());
+        let mut tag_buf = [0; 13];
+        assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
+        let Ok(Event::GetStory {peer_id, epic_id, story_id}) = block_on(Event::try_create_get_story(Uuid::new_v4(), &tag_buf)) else { panic!("unable to parse event correctly") };
+
+        assert_eq!(epic_id, 0);
+        assert_eq!(story_id, 97);
+
+        println!("testing bogus request option...");
+        let user_option = "du98fd9e";
+        let mut user_input = Cursor::new(String::from("basdfoiub\n"));
+        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
+        println!("{:?}", request);
+        assert!(request.is_err());
+    }
+
+    #[test]
+    fn test_story_detail_page_parse_request() {
+        let test_story = Story::new(97, 1, String::from("Test story"), String::from("A good story for testing purposes"), Status::InProgress);
+        let story_detail_page_res = StoryDetailPage::try_create(test_story.as_bytes());
+
+        println!("{:?}", story_detail_page_res);
+        assert!(story_detail_page_res.is_ok());
+
+        let story_detail_page = story_detail_page_res.unwrap();
+
+        println!("testing previous option...");
+        let user_option = "p";
+        let mut request_data = Cursor::new(vec![]);
+        let request = block_on(story_detail_page.parse_request(user_option, &mut request_data));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_none());
+
     }
 }
 
