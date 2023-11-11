@@ -974,6 +974,71 @@ mod test {
         println!("{:?}", request);
         assert!(request.is_none());
 
+        println!("testing update option...");
+        let user_option = "u";
+        let mut request_input = Cursor::new(String::from("2\n").into_bytes());
+        let request = block_on(story_detail_page.parse_request(user_option, &mut request_input));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_some());
+
+        let mut request_data = Cursor::new(request.unwrap());
+        let mut tag_buf = [0; 13];
+        assert!(block_on(request_data.read_exact(&mut tag_buf)).is_ok());
+
+        let Ok(Event::UpdateStoryStatus { peer_id, epic_id,story_id, status}) = block_on(Event::try_create_update_story_status(Uuid::new_v4(), &tag_buf))
+            else { panic!("unable to parse event correctly") };
+
+        assert_eq!(epic_id, 1);
+        assert_eq!(story_id, 97);
+        assert_eq!(status, Status::try_from(2).expect("status should be created"));
+
+        println!("testing delete option...");
+        let user_option = "d";
+        let mut request_input = Cursor::new(String::from("y\n").into_bytes());
+        let request = block_on(story_detail_page.parse_request(user_option, &mut request_input));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.is_some());
+
+        let mut request_data = Cursor::new(request.unwrap());
+        let mut tag_buf = [0; 13];
+        assert!(block_on(request_data.read_exact(&mut tag_buf)).is_ok());
+
+        let Ok(Event::DeleteStory { peer_id, epic_id, story_id}) =
+            block_on(Event::try_create_delete_story(Uuid::new_v4(), &tag_buf))
+            else { panic!("unable to parse event correctly") };
+
+        assert_eq!(epic_id, 1);
+        assert_eq!(story_id, 97);
+
+        let user_option = "d";
+        let mut request_input = Cursor::new(String::from("n\n").into_bytes());
+        let request = block_on(story_detail_page.parse_request(user_option, &mut request_input));
+
+        println!("{:?}", request);
+        assert!(request.is_ok());
+
+        let request = request.unwrap();
+        println!("{:?}", request);
+        assert!(request.expect("should contain vector").is_empty());
+
+        println!("testing garbage input...");
+        let user_option = "asdojie038";
+        let mut request_input = Cursor::new(vec![2, 34, 5, 1]);
+
+        let request = block_on(story_detail_page.parse_request(user_option, &mut request_input));
+
+        println!("{:?}", request);
+        assert!(request.is_err());
     }
 }
 
