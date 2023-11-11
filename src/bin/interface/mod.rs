@@ -2,6 +2,7 @@
 //! with the server.
 //!
 
+use std::io::BufRead;
 use std::marker::Unpin;
 use async_std::io::{ReadExt, Read};
 use async_jira_cli::response::prelude::*;
@@ -27,14 +28,14 @@ pub mod prelude {
 /// the appropriate prompt to the user on stdout via `parse_response` method. Internally,
 /// an `Interface` will keep a stack of pages that can be navigated through by the client, and
 /// will display appropriate messages when errors arise.
-pub struct Interface {
-    page_stack: Vec<Box<dyn Page>>,
+pub struct Interface<R: BufRead> {
+    page_stack: Vec<Box<dyn Page<R>>>,
 }
 
 // TODO: 1) move response conditional blocks into separate functions
 // TODO: 2) implement a parse_option method for taking a user selected option input from stdin
 //          and parsing it correctly i.e. implementing the logic needed for the users given selection
-impl Interface {
+impl<R: std::io::BufRead> Interface<R> {
     /// Creates a new `Interface`
     pub fn new() -> Self {
         Interface { page_stack: Vec::new() }
@@ -58,7 +59,7 @@ impl Interface {
             // Attempt to create homepage
             let homepage = Box::new(HomePage::try_create(data)?);
             // Display homepage if successful
-            homepage.print_page();
+            <pages::HomePage as pages::Page<R>>::print_page(&homepage);
             println!();
             // Save homepage to `self.page_stack`
             self.page_stack.push(homepage);

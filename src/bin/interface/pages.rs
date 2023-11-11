@@ -5,9 +5,9 @@ use crate::UserError;
 use async_jira_cli::models::prelude::*;
 use async_jira_cli::utils::prelude::*;
 use async_jira_cli::events::prelude::*;
-use async_std::io::{ReadExt, BufRead};
-use std::io::{Read, Cursor, Seek, ErrorKind};
-use async_std::io::prelude::BufReadExt;
+// use async_std::io::{ReadExt, BufRead};
+use std::io::{Read, BufRead, Cursor, Seek, ErrorKind};
+// use async_std::io::prelude::BufReadExt;
 use unicode_width;
 
 pub mod prelude {
@@ -21,8 +21,40 @@ pub mod prelude {
 /// The `Page` trait allows for different types of CLI interface pages to share
 /// the functionality of any typical CLI page i.e. `print_page`. The main purpose is to allow
 /// different types of pages to be held in a single data structure as trait objects.
-pub trait Page {
+pub trait Page<R: std::io::BufRead> {
+    /// Required method, prints the page's contents to the console in a way that is formatted 
     fn print_page(&self);
+    /// Required method, takes `request_option` and `input_reader` and attempts to create 
+    /// an `Action`. Returns `Result`, the `Ok` variant if the request was parsed successfully, otherwise
+    /// the `Err` variant.
+    fn parse_request(&self, request_option: &str, input_reader: R) -> Result<Action, UserError>;
+}
+
+/// Represents the possible states that prompt the `Interface` to update.
+#[derive(Debug, PartialEq)]
+pub enum Action {
+    Quit,
+    PreviousPage,
+    Refresh,
+    RequestParsed(Vec<u8>)
+}
+
+impl Action {
+    pub fn is_quit(&self) -> bool {
+        *self == Action::Quit
+    }
+
+    pub fn is_previous_page(&self) -> bool {
+        *self == Action::PreviousPage
+    }
+
+    pub fn is_refresh(&self) -> bool {
+        *self == Action::Refresh
+    }
+
+    pub fn is_request_parsed(&self) -> bool {
+        !(self.is_quit() || self.is_previous_page() || self.is_refresh())
+    }
 }
 
 /// Represents the first page that the user will see.
@@ -34,58 +66,58 @@ pub struct HomePage {
 impl HomePage {
     /// Associated method  for accepting a request option then performing the appropriate logic for constructing
     /// the request, i.e. prompting the user for input or displaying an error message etc...
-    pub async fn parse_request<R: BufRead + ReadExt + Unpin>(request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
-        if request_option.to_lowercase() == "q" {
-            return Ok(None);
-        } else if request_option.to_lowercase() == "c" {
-            // User has selected to add a new epic to the database
-            let mut input_reader = input_reader;
-            let mut epic_name = String::new();
-
-            println!("epic name:");
-
-            let _ = input_reader.read_line(&mut epic_name)
-                .await
-                .map_err(|_| UserError::ParseInputError)?;
-
-            // Remove new line character from name
-            epic_name = epic_name.trim_end_matches('\n').to_string();
-
-            // Ensure the length of the name can fit inside 8 bytes
-            if epic_name.as_bytes().len() > u32::MAX as usize {
-                return Err(UserError::InvalidInput(String::from("Invalid input, epic's name is to large")));
-            }
-            println!();
-
-            let mut epic_description = String::new();
-
-            println!("epic description: ");
-
-            let _ = input_reader.read_line(&mut epic_description)
-                .await
-                .map_err(|_| UserError::ParseInputError)?;
-
-            // Remove the new line character from description
-            epic_description = epic_description.trim_end_matches('\n').to_string();
-
-            // Ensure the length of the description can fit inside 8 bytes
-            if epic_description.as_bytes().len()  > u32::MAX as usize {
-                return Err(UserError::InvalidInput(String::from("Invalid input, epic's description is to large")));
-            }
-
-            // Get the bytes for the request from the tag, name and description
-            let mut request_bytes = Event::add_epic_tag(&epic_name, &epic_description).to_vec();
-            request_bytes.extend_from_slice(epic_name.as_bytes());
-            request_bytes.extend_from_slice(epic_description.as_bytes());
-            Ok(Some(request_bytes))
-        } else if let Ok(id) = request_option.parse::<u32>() {
-            // User has selected to request details for an epic
-            let request_bytes = Event::get_epic_tag(id).to_vec();
-            Ok(Some(request_bytes))
-        } else {
-            Err(UserError::InvalidRequest)
-        }
-    }
+    // pub async fn parse_request<R: BufRead + ReadExt + Unpin>(request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
+    //     if request_option.to_lowercase() == "q" {
+    //         return Ok(None);
+    //     } else if request_option.to_lowercase() == "c" {
+    //         // User has selected to add a new epic to the database
+    //         let mut input_reader = input_reader;
+    //         let mut epic_name = String::new();
+    // 
+    //         println!("epic name:");
+    // 
+    //         let _ = input_reader.read_line(&mut epic_name)
+    //             .await
+    //             .map_err(|_| UserError::ParseInputError)?;
+    // 
+    //         // Remove new line character from name
+    //         epic_name = epic_name.trim_end_matches('\n').to_string();
+    // 
+    //         // Ensure the length of the name can fit inside 8 bytes
+    //         if epic_name.as_bytes().len() > u32::MAX as usize {
+    //             return Err(UserError::InvalidInput(String::from("Invalid input, epic's name is to large")));
+    //         }
+    //         println!();
+    // 
+    //         let mut epic_description = String::new();
+    // 
+    //         println!("epic description: ");
+    // 
+    //         let _ = input_reader.read_line(&mut epic_description)
+    //             .await
+    //             .map_err(|_| UserError::ParseInputError)?;
+    // 
+    //         // Remove the new line character from description
+    //         epic_description = epic_description.trim_end_matches('\n').to_string();
+    // 
+    //         // Ensure the length of the description can fit inside 8 bytes
+    //         if epic_description.as_bytes().len()  > u32::MAX as usize {
+    //             return Err(UserError::InvalidInput(String::from("Invalid input, epic's description is to large")));
+    //         }
+    // 
+    //         // Get the bytes for the request from the tag, name and description
+    //         let mut request_bytes = Event::add_epic_tag(&epic_name, &epic_description).to_vec();
+    //         request_bytes.extend_from_slice(epic_name.as_bytes());
+    //         request_bytes.extend_from_slice(epic_description.as_bytes());
+    //         Ok(Some(request_bytes))
+    //     } else if let Ok(id) = request_option.parse::<u32>() {
+    //         // User has selected to request details for an epic
+    //         let request_bytes = Event::get_epic_tag(id).to_vec();
+    //         Ok(Some(request_bytes))
+    //     } else {
+    //         Err(UserError::InvalidRequest)
+    //     }
+    // }
 
     /// Associated method, attempts to create a new `HomePage` struct from `data`.
     /// Returns a `Result`, the `Ok` variant if creating was successful, otherwise `Err`.
@@ -130,7 +162,7 @@ impl HomePage {
     }
 }
 
-impl Page for HomePage {
+impl<R: std::io::BufRead> Page<R> for HomePage {
     fn print_page(&self) {
         println!("{:-^65}", "EPICS");
         print!("{:^13}|", "id");
@@ -143,6 +175,57 @@ impl Page for HomePage {
         println!();
         println!("[q] quit | [c] create epic | [:id:] navigate to epic");
         println!();
+    }
+
+    fn parse_request(&self, request_option: &str, input_reader: R) -> Result<Action, UserError> {
+        if request_option.to_lowercase() == "q" {
+            return Ok(Action::Quit);
+        } else if request_option.to_lowercase() == "c" {
+            // User has selected to add a new epic to the database
+            let mut input_reader = input_reader;
+            let mut epic_name = String::new();
+
+            println!("epic name:");
+
+            let _ = input_reader.read_line(&mut epic_name)
+                .map_err(|_| UserError::ParseInputError)?;
+
+            // Remove new line character from name
+            let epic_name = epic_name.trim_end_matches('\n').to_string();
+
+            // Ensure the length of the name can fit inside 8 bytes
+            if epic_name.as_bytes().len() > u32::MAX as usize {
+                return Err(UserError::InvalidInput(String::from("Invalid input, epic's name is to large")));
+            }
+            println!();
+
+            let mut epic_description = String::new();
+
+            println!("epic description: ");
+
+            let _ = input_reader.read_line(&mut epic_description)
+                .map_err(|_| UserError::ParseInputError)?;
+
+            // Remove the new line character from description
+            let epic_description = epic_description.trim_end_matches('\n').to_string();
+
+            // Ensure the length of the description can fit inside 8 bytes
+            if epic_description.as_bytes().len()  > u32::MAX as usize {
+                return Err(UserError::InvalidInput(String::from("Invalid input, epic's description is to large")));
+            }
+
+            // Get the bytes for the request from the tag, name and description
+            let mut request_bytes = Event::add_epic_tag(&epic_name, &epic_description).to_vec();
+            request_bytes.extend_from_slice(epic_name.as_bytes());
+            request_bytes.extend_from_slice(epic_description.as_bytes());
+            Ok(Action::RequestParsed(request_bytes))
+        } else if let Ok(id) = request_option.parse::<u32>() {
+            // User has selected to request details for an epic
+            let request_bytes = Event::get_epic_tag(id).to_vec();
+            Ok(Action::RequestParsed(request_bytes))
+        } else {
+            Err(UserError::InvalidRequest)
+        }
     }
 }
 
@@ -201,9 +284,179 @@ impl EpicDetailPage {
     /// Takes `request_option` which represents the user request and `input_reader` which is the
     /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
     /// the request was created successfully, otherwise
-    pub async fn parse_request<R: BufRead + ReadExt + Unpin>(&self, request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
+    // pub async fn parse_request<R: BufRead + ReadExt + Unpin>(&self, request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
+    //     if request_option.to_lowercase() == "p" {
+    //         Ok(None)
+    //     } else if request_option.to_lowercase() == "u" {
+    //         // Update epic's status in this case
+    //         let mut input_reader = input_reader;
+    //         let mut new_status_buf = String::new();
+    //
+    //         // read the new status from the user, use a validation loop
+    //         let new_status = loop {
+    //             self.print_status_update_menu();
+    //             match input_reader.read_line(&mut new_status_buf).await {
+    //                 Ok(n) if n > 0 => {
+    //                     // Remove new line character from buffer
+    //                     new_status_buf = new_status_buf.trim_end().to_string();
+    //                     match new_status_buf.parse::<u8>() {
+    //                         Ok(s) if (0..4u8).contains(&s) => {
+    //                             break s;
+    //                         }
+    //                         Ok(s) => {
+    //                             println!("invalid status selection, please try again");
+    //                             eprintln!("invalid status selection, please try again");
+    //                         }
+    //                         Err(_) => {
+    //                             println!("unable to parse status selection, please try again");
+    //                             eprintln!("unable to parse status selection, please try again");
+    //                         }
+    //                     }
+    //                 }
+    //                 Ok(n) => {
+    //                     println!("no input entered, please try again");
+    //                     eprintln!("no input entered, please try again");
+    //                 }
+    //                 Err(_) => {
+    //                     println!("unable to read input, please try again");
+    //                     eprintln!("unable to read input, please try again");
+    //                 }
+    //             }
+    //             new_status_buf.clear();
+    //         };
+    //         // Create the request bytes
+    //         let request_bytes = Event::get_update_epic_status_tag(self.frame.id, new_status).to_vec();
+    //         Ok(Some(request_bytes))
+    //     } else if request_option.to_lowercase() == "d" {
+    //         let mut input_reader = input_reader;
+    //
+    //         // Delete the epic
+    //         println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
+    //         let mut user_final_choice = String::new();
+    //
+    //         let request_bytes = loop {
+    //             match input_reader.read_line(&mut user_final_choice).await {
+    //                 Ok(n) if n > 0 => {
+    //                     match user_final_choice.trim_end().to_lowercase().as_str() {
+    //                         "y" => break Event::delete_epic_tag(self.frame.id).to_vec(),
+    //                         "n" => break vec![],
+    //                         _ => {
+    //                             println!("please choose a valid option");
+    //                             println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
+    //                         }
+    //                     }
+    //                 }
+    //                 Ok(n) => {
+    //                     println!("no input entered, please choose a valid option");
+    //                     eprintln!("no input entered, please choose a valid option");
+    //                 }
+    //                 Err(e) => {
+    //                     println!("unable to read input, please try again");
+    //                     eprintln!("unable to read input, please try again");
+    //                 }
+    //             }
+    //             user_final_choice.clear();
+    //         };
+    //
+    //         Ok(Some(request_bytes))
+    //     } else if request_option.to_lowercase() == "c" {
+    //         // Create a new story
+    //         let mut input_reader = input_reader;
+    //         let mut story_name = String::new();
+    //
+    //         println!("story name:");
+    //
+    //         input_reader.read_line(&mut story_name)
+    //             .await
+    //             .map_err(|_| UserError::ParseInputError)?;
+    //
+    //         // remove new line character at the end
+    //         story_name = story_name.trim_end_matches('\n').to_string();
+    //
+    //         // ensure the length of story_name in bytes can fit within 8 bytes
+    //         if story_name.as_bytes().len()  > u32::MAX as usize {
+    //             return Err(UserError::InvalidInput(String::from("invalid input, story's name is too large")));
+    //         }
+    //
+    //         println!();
+    //
+    //         let mut story_description = String::new();
+    //         println!("story description: ");
+    //
+    //         input_reader.read_line(&mut story_description)
+    //             .await
+    //             .map_err(|_| UserError::ParseInputError)?;
+    //
+    //         // remove new line character at the end
+    //         story_description = story_description.trim_end_matches('\n').to_string();
+    //
+    //         if story_description.as_bytes().len() > u32::MAX as usize {
+    //             return Err(UserError::InvalidInput(String::from("invalid input, story's description is too large")));
+    //         }
+    //
+    //         let mut request_bytes = Event::add_story_tag(self.frame.id, &story_name, &story_description).to_vec();
+    //         request_bytes.extend_from_slice(story_name.as_bytes());
+    //         request_bytes.extend_from_slice(story_description.as_bytes());
+    //
+    //         Ok(Some(request_bytes))
+    //     } else if let Ok(story_id) = request_option.parse::<u32>() {
+    //         // navigate to story detail page
+    //         let request_bytes = Event::get_story_tag(self.frame.id, story_id).to_vec();
+    //         Ok(Some(request_bytes))
+    //     } else {
+    //         Err(UserError::InvalidRequest)
+    //     }
+    // }
+
+    /// A helper function for displaying a single line in the implementation of `print_page`.
+    fn print_line(story_frame: &StoryFrame) {
+        print!("{:<13}|", story_frame.id);
+        print!(" {:<32}|", justify_text_with_ellipses(32, &story_frame.name));
+        println!(" {:<15}", story_frame.status);
+    }
+
+    /// A helper function for displaying the status selection menu
+    fn print_status_update_menu(&self) {
+        println!("please select the status you would like to update epic {} with", self.frame.id);
+        println!("{:<11} - 0", "Open");
+        println!("{:<11} - 1", "In Progress");
+        println!("{:<11} - 2", "Resolved");
+        println!("{:<11} - 3", "Closed");
+    }
+}
+
+impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
+    fn print_page(&self) {
+        println!("{:-^65}", "EPIC");
+        print!("{:^6}| ", "id");
+        print!("{:^14}| ", "name");
+        print!("{:^29}| ", "description");
+        println!("{:^12}", "status");
+
+        print!("{:<6}| ", self.frame.id);
+        print!("{:^13} | ", justify_text_with_ellipses(12, &self.frame.name));
+        print!("{:^28} | ", justify_text_with_ellipses(27, &self.frame.description));
+        println!("{:^10}", self.frame.status);
+        println!();
+
+        println!("{:-^65}", "STORIES");
+        print!("{:^13}|", "id");
+        print!("{:^33}|", "name");
+        println!("{:^16}", "status");
+
+        for story_frame in &self.story_frames {
+            EpicDetailPage::print_line(story_frame);
+        }
+
+        println!();
+        println!();
+        println!("[p] previous | [u] update epic | [d] delete epic | [c] create story | [:id:] navigate to story");
+        println!();
+    }
+
+    fn parse_request(&self, request_option: &str, input_reader: R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
-            Ok(None)
+            Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
             // Update epic's status in this case
             let mut input_reader = input_reader;
@@ -212,7 +465,7 @@ impl EpicDetailPage {
             // read the new status from the user, use a validation loop
             let new_status = loop {
                 self.print_status_update_menu();
-                match input_reader.read_line(&mut new_status_buf).await {
+                match input_reader.read_line(&mut new_status_buf) {
                     Ok(n) if n > 0 => {
                         // Remove new line character from buffer
                         new_status_buf = new_status_buf.trim_end().to_string();
@@ -243,7 +496,7 @@ impl EpicDetailPage {
             };
             // Create the request bytes
             let request_bytes = Event::get_update_epic_status_tag(self.frame.id, new_status).to_vec();
-            Ok(Some(request_bytes))
+            Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "d" {
             let mut input_reader = input_reader;
 
@@ -252,7 +505,7 @@ impl EpicDetailPage {
             let mut user_final_choice = String::new();
 
             let request_bytes = loop {
-                match input_reader.read_line(&mut user_final_choice).await {
+                match input_reader.read_line(&mut user_final_choice) {
                     Ok(n) if n > 0 => {
                         match user_final_choice.trim_end().to_lowercase().as_str() {
                             "y" => break Event::delete_epic_tag(self.frame.id).to_vec(),
@@ -263,11 +516,11 @@ impl EpicDetailPage {
                             }
                         }
                     }
-                    Ok(n) => {
+                    Ok(_n) => {
                         println!("no input entered, please choose a valid option");
                         eprintln!("no input entered, please choose a valid option");
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         println!("unable to read input, please try again");
                         eprintln!("unable to read input, please try again");
                     }
@@ -275,7 +528,7 @@ impl EpicDetailPage {
                 user_final_choice.clear();
             };
 
-            Ok(Some(request_bytes))
+            Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "c" {
             // Create a new story
             let mut input_reader = input_reader;
@@ -284,7 +537,6 @@ impl EpicDetailPage {
             println!("story name:");
 
             input_reader.read_line(&mut story_name)
-                .await
                 .map_err(|_| UserError::ParseInputError)?;
 
             // remove new line character at the end
@@ -301,7 +553,6 @@ impl EpicDetailPage {
             println!("story description: ");
 
             input_reader.read_line(&mut story_description)
-                .await
                 .map_err(|_| UserError::ParseInputError)?;
 
             // remove new line character at the end
@@ -315,60 +566,14 @@ impl EpicDetailPage {
             request_bytes.extend_from_slice(story_name.as_bytes());
             request_bytes.extend_from_slice(story_description.as_bytes());
 
-            Ok(Some(request_bytes))
+            Ok(Action::RequestParsed(request_bytes))
         } else if let Ok(story_id) = request_option.parse::<u32>() {
             // navigate to story detail page
             let request_bytes = Event::get_story_tag(self.frame.id, story_id).to_vec();
-            Ok(Some(request_bytes))
+            Ok(Action::RequestParsed(request_bytes))
         } else {
             Err(UserError::InvalidRequest)
         }
-    }
-
-    /// A helper function for displaying a single line in the implementation of `print_page`.
-    fn print_line(story_frame: &StoryFrame) {
-        print!("{:<13}|", story_frame.id);
-        print!(" {:<32}|", justify_text_with_ellipses(32, &story_frame.name));
-        println!(" {:<15}", story_frame.status);
-    }
-
-    /// A helper function for displaying the status selection menu
-    fn print_status_update_menu(&self) {
-        println!("please select the status you would like to update epic {} with", self.frame.id);
-        println!("{:<11} - 0", "Open");
-        println!("{:<11} - 1", "In Progress");
-        println!("{:<11} - 2", "Resolved");
-        println!("{:<11} - 3", "Closed");
-    }
-}
-
-impl Page for EpicDetailPage {
-    fn print_page(&self) {
-        println!("{:-^65}", "EPIC");
-        print!("{:^6}| ", "id");
-        print!("{:^14}| ", "name");
-        print!("{:^29}| ", "description");
-        println!("{:^12}", "status");
-
-        print!("{:<6}| ", self.frame.id);
-        print!("{:^13} | ", justify_text_with_ellipses(12, &self.frame.name));
-        print!("{:^28} | ", justify_text_with_ellipses(27, &self.frame.description));
-        println!("{:^10}", self.frame.status);
-        println!();
-
-        println!("{:-^65}", "STORIES");
-        print!("{:^13}|", "id");
-        print!("{:^33}|", "name");
-        println!("{:^16}", "status");
-
-        for story_frame in &self.story_frames {
-            EpicDetailPage::print_line(story_frame);
-        }
-
-        println!();
-        println!();
-        println!("[p] previous | [u] update epic | [d] delete epic | [c] create story | [:id:] navigate to story");
-        println!();
     }
 }
 
@@ -403,9 +608,104 @@ impl StoryDetailPage {
     /// Takes `request_option` which represents the user request and `input_reader` which is the
     /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
     /// the request was created successfully, otherwise returns `Err`
-    pub async fn parse_request<R: ReadExt + Unpin>(&self, request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
+    // pub async fn parse_request<R: ReadExt + Unpin>(&self, request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
+    //     if request_option.to_lowercase() == "p" {
+    //         Ok(None)
+    //     } else if request_option.to_lowercase() == "u" {
+    //         let mut input_reader = input_reader;
+    //         let mut status_buf = String::new();
+    //
+    //         // Validation loop for getting new status from the user
+    //         let new_status = loop {
+    //             self.print_status_update_menu();
+    //             match input_reader.read_to_string(&mut status_buf).await {
+    //                 Ok(_n) => {
+    //                     // Remove new line character from buffer
+    //                     match status_buf.trim_end().parse::<u8>() {
+    //                         Ok(s) if (0..4).contains(&s) => break s,
+    //                         Ok(_s)  => {
+    //                             println!("error parsing input as a valid status, please try again");
+    //                             eprintln!("error parsing input as a valid status, please try again");
+    //                         }
+    //                         Err(e) => {
+    //                             println!("error parsing input, please try again");
+    //                             eprintln!("error parsing input, please try again");
+    //                         }
+    //                     }
+    //                 }
+    //                 Err(_) => {
+    //                     println!("error reading input, please try again");
+    //                     eprintln!("error reading input, please try again");
+    //                 }
+    //             }
+    //             status_buf.clear();
+    //         };
+    //
+    //         let request_bytes = Event::get_update_story_status_tag(self.story_frame.epic_id, self.story_frame.id, new_status).to_vec();
+    //         Ok(Some(request_bytes))
+    //     } else if request_option.to_lowercase() == "d" {
+    //         let mut user_final_choice = String::new();
+    //         let mut input_reader = input_reader;
+    //         println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
+    //         let request_bytes = loop {
+    //             match input_reader.read_to_string(&mut user_final_choice).await {
+    //                 Ok(n) if n > 0 => {
+    //                     match user_final_choice.trim_end() {
+    //                         "y" => break Event::get_delete_story_tag(self.story_frame.epic_id, self.story_frame.id).to_vec(),
+    //                         "n" => break vec![],
+    //                         _ => {
+    //                             println!("please choose a valid option");
+    //                             println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
+    //                         }
+    //                     }
+    //                 }
+    //                 Ok(n) => {
+    //                     println!("no input entered, please try again");
+    //                     eprintln!("no input entered, please try again");
+    //                 }
+    //                 Err(e) => {
+    //                     println!("error reading input, please try again");
+    //                     eprintln!("error reading input, please try again");
+    //                 }
+    //             }
+    //             user_final_choice.clear();
+    //         };
+    //         Ok(Some(request_bytes))
+    //     } else {
+    //         Err(UserError::InvalidRequest)
+    //     }
+    // }
+
+    /// A helper function for displaying the status selection menu
+    fn print_status_update_menu(&self) {
+        println!("please select the status you would like to update story {} with", self.story_frame.id);
+        println!("{:<11} - 0", "Open");
+        println!("{:<11} - 1", "In Progress");
+        println!("{:<11} - 2", "Resolved");
+        println!("{:<11} - 3", "Closed");
+    }
+}
+
+impl<R: std::io::BufRead> Page<R> for StoryDetailPage {
+    fn print_page(&self) {
+        println!("{:-^65}", "Story");
+        print!("{:^6}|", "id");
+        print!("{:^14}|", "name");
+        print!("{:^29}|", "description");
+        println!("{:^12}", "status");
+        // display story details
+        print!("{:<6}| ", self.story_frame.id);
+        print!("{:^12} | ", justify_text_with_ellipses(12, &self.story_frame.name));
+        print!("{:^27} | ", justify_text_with_ellipses(27, &self.story_frame.description));
+        println!("{:^10}", self.story_frame.status);
+        println!();
+
+        println!("[p] previous | [u] update story | [d] delete story");
+    }
+
+    fn parse_request(&self, request_option: &str, input_reader: R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
-            Ok(None)
+            Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
             let mut input_reader = input_reader;
             let mut status_buf = String::new();
@@ -413,7 +713,7 @@ impl StoryDetailPage {
             // Validation loop for getting new status from the user
             let new_status = loop {
                 self.print_status_update_menu();
-                match input_reader.read_to_string(&mut status_buf).await {
+                match input_reader.read_to_string(&mut status_buf) {
                     Ok(_n) => {
                         // Remove new line character from buffer
                         match status_buf.trim_end().parse::<u8>() {
@@ -437,13 +737,13 @@ impl StoryDetailPage {
             };
 
             let request_bytes = Event::get_update_story_status_tag(self.story_frame.epic_id, self.story_frame.id, new_status).to_vec();
-            Ok(Some(request_bytes))
+            Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "d" {
             let mut user_final_choice = String::new();
             let mut input_reader = input_reader;
             println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
             let request_bytes = loop {
-                match input_reader.read_to_string(&mut user_final_choice).await {
+                match input_reader.read_to_string(&mut user_final_choice) {
                     Ok(n) if n > 0 => {
                         match user_final_choice.trim_end() {
                             "y" => break Event::get_delete_story_tag(self.story_frame.epic_id, self.story_frame.id).to_vec(),
@@ -454,48 +754,21 @@ impl StoryDetailPage {
                             }
                         }
                     }
-                    Ok(n) => {
+                    Ok(_n) => {
                         println!("no input entered, please try again");
                         eprintln!("no input entered, please try again");
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         println!("error reading input, please try again");
                         eprintln!("error reading input, please try again");
                     }
                 }
                 user_final_choice.clear();
             };
-            Ok(Some(request_bytes))
+            Ok(Action::RequestParsed(request_bytes))
         } else {
             Err(UserError::InvalidRequest)
         }
-    }
-
-    /// A helper function for displaying the status selection menu
-    fn print_status_update_menu(&self) {
-        println!("please select the status you would like to update story {} with", self.story_frame.id);
-        println!("{:<11} - 0", "Open");
-        println!("{:<11} - 1", "In Progress");
-        println!("{:<11} - 2", "Resolved");
-        println!("{:<11} - 3", "Closed");
-    }
-}
-
-impl Page for StoryDetailPage {
-    fn print_page(&self) {
-        println!("{:-^65}", "Story");
-        print!("{:^6}|", "id");
-        print!("{:^14}|", "name");
-        print!("{:^29}|", "description");
-        println!("{:^12}", "status");
-        // display story details
-        print!("{:<6}| ", self.story_frame.id);
-        print!("{:^12} | ", justify_text_with_ellipses(12, &self.story_frame.name));
-        print!("{:^27} | ", justify_text_with_ellipses(27, &self.story_frame.description));
-        println!("{:^10}", self.story_frame.status);
-        println!();
-
-        println!("[p] previous | [u] update story | [d] delete story");
     }
 }
 
@@ -540,7 +813,7 @@ fn justify_text_with_ellipses(width: usize, text: &String) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
-    use async_std::io::{Cursor, ReadExt, BufRead};
+    use std::io::{Cursor, Read, BufRead};
     use async_std::task::block_on;
     use uuid::Uuid;
 
@@ -708,48 +981,80 @@ mod test {
 
     #[test]
     fn test_home_page_parse_request() {
-        // Test quit option, should return Ok(None)
+        let mut homepage = HomePage {epic_frames: vec![] };
+        homepage.epic_frames.push(
+            EpicFrame {
+                id: 0,
+                name: String::from("Test Epic"),
+                description: String::from("Another good epic for testing"),
+                status: Status::Open,
+            }
+        );
+
+        homepage.epic_frames.push(
+            EpicFrame {
+                id: 1,
+                name: String::from("Test Epic"),
+                description: String::from("Another good epic for testing"),
+                status: Status::Resolved,
+            }
+        );
+
+        homepage.epic_frames.push(
+            EpicFrame {
+                id: 3,
+                name: String::from("Test Epic"),
+                description: String::from("Another good epic for testing"),
+                status: Status::InProgress,
+            }
+        );
+        // Test quit option, should return Ok(Action::Quit)
         println!("Testing quit...");
         let user_input = "q";
-        let mut input_reader = Cursor::new(vec![1u8, 2, 3, 4, 5]);
-        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+        let mut request_input = Cursor::new(vec![1u8, 2, 3, 4, 5]);
+        // let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+        let request = homepage.parse_request(user_input, request_input);
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_none());
+        assert_eq!(request, Action::Quit);
 
         let user_input = "Q";
-        let mut input_reader = Cursor::new(vec![1u8, 2, 3, 4, 5]);
-        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+        let mut request_input = Cursor::new(vec![1u8, 2, 3, 4, 5]);
+        let request = homepage.parse_request(user_input, request_input);
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_none());
+        assert_eq!(request, Action::Quit);
 
-        // Test create option, should return Ok(Some(Vec<u8>)),
+        // Test create option, should return Ok(Action::RequestParsed(Vec<u8>)),
         println!("Testing epic creation...");
         let user_input = "c";
         let mut input_reader = Cursor::new(String::from("Test Epic\nA good epic for testing purposes\n").into_bytes());
-        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+        let request = homepage.parse_request(user_input, &mut input_reader);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_some());
+        assert!(request.is_request_parsed());
+
+        let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
 
         // Attempt to parse the encoded request
-        let mut request_cursor = Cursor::new(request.unwrap());
+        let mut request_cursor = Cursor::new(request_bytes);
         let mut tag_buf = [0u8; 13];
-        let res = block_on(request_cursor.read_exact(&mut tag_buf));
+        let res = request_cursor.read_exact(&mut tag_buf);
         println!("{:?}", res);
         assert!(res.is_ok());
 
+        // let Ok(Event::AddEpic {peer_id, epic_name, epic_description}) =
+        //     block_on(Event::try_create_add_epic(Uuid::new_v4(), &tag_buf, request_cursor))
         let Ok(Event::AddEpic {peer_id, epic_name, epic_description}) =
             block_on(Event::try_create_add_epic(Uuid::new_v4(), &tag_buf, request_cursor))
         else { panic!("event was not created correctly") };
@@ -759,19 +1064,20 @@ mod test {
 
         let user_input = "C";
         let mut input_reader = Cursor::new(String::from("Test Epic\nA good epic for testing purposes").into_bytes());
-        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+        let request = homepage.parse_request(user_input, &mut input_reader);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_some());
+        assert!(request.is_request_parsed());
 
         // Attempt to parse the encoded request
-        let mut request_cursor = Cursor::new(request.unwrap());
+        let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
+        let mut request_cursor = Cursor::new(request_bytes);
         let mut tag_buf = [0u8; 13];
-        let res = block_on(request_cursor.read_exact(&mut tag_buf));
+        let res = request_cursor.read_exact(&mut tag_buf);
         println!("{:?}", res);
         assert!(res.is_ok());
 
@@ -785,19 +1091,20 @@ mod test {
         // Test getting epic request
         println!("Testing get epic option...");
         let user_input = "97";
-        let mut input_reader = Cursor::new(vec![0u8]);
-        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+        let mut request_input = Cursor::new(vec![0u8]);
+        let request = homepage.parse_request(request_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_some());
+        assert!(request.is_request_parsed());
 
-        let mut request_cursor = Cursor::new(request.unwrap());
+        let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
+        let mut request_cursor = Cursor::new(request_bytes);
         let mut tag_buf = [0u8; 13];
-        let res = block_on(request_cursor.read_exact(&mut tag_buf));
+        let res = request_cursor.read_exact(&mut tag_buf);
 
         println!("{:?}", res);
         assert!(res.is_ok());
@@ -809,8 +1116,8 @@ mod test {
 
         // Testing invalid input option
         let user_input = "djowalk";
-        let mut input_reader = Cursor::new(Vec::new());
-        let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
+        let mut request_input = Cursor::new(Vec::new());
+        let request = homepage.parse_request(user_input, &mut request_input);
         println!("{:?}", request);
         assert!(request.is_err());
     }
@@ -841,46 +1148,49 @@ mod test {
 
         println!("testing previous option...");
         // Some empty request data
-        let mut request_data = Cursor::new(vec![]);
-        let request = block_on(epic_detail_page.parse_request("P", &mut request_data));
+        let user_input = "p";
+        let mut request_input = Cursor::new(vec![]);
+        let request = epic_detail_page.parse_request(user_input, &mut request_input);
         println!("{:?}", request);
         assert!(request.is_ok());
-        // Should be None
-        assert!(request.unwrap().is_none());
+        assert!(request.unwrap().is_previous_page());
 
         println!("testing update option...");
-        let mut user_input = Cursor::new(String::from("3\n").into_bytes());
-        let request = block_on(epic_detail_page.parse_request("u", &mut user_input));
+        let user_input = "u";
+        let mut request_input = Cursor::new(String::from("3\n").into_bytes());
+        let request = epic_detail_page.parse_request(user_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_some());
+        let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
 
         // Simulate reading the request from the user
-        let mut request_cursor = Cursor::new(request.unwrap());
+        let mut request_cursor = Cursor::new(request_bytes);
         // read the tag from the request
         let mut tag_buf = [0; 13];
-        assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
+        assert!(request_cursor.read_exact(&mut tag_buf).is_ok());
         // Attempt to parse an event from the request
-        let Ok(Event::UpdateEpicStatus {peer_id, epic_id, status}) = block_on(Event::try_create_update_epic_status(Uuid::new_v4(), &tag_buf)) else { panic!("unable to parse request correctly") };
+        let Ok(Event::UpdateEpicStatus {peer_id, epic_id, status}) =
+            block_on(Event::try_create_update_epic_status(Uuid::new_v4(), &tag_buf))
+            else { panic!("unable to parse request correctly") };
 
         assert_eq!(epic_id, 0);
         assert_eq!(status, Status::Closed);
 
         println!("testing delete epic option...");
-        let user_option = "d";
-        let mut user_input = Cursor::new(String::from("y\n").into_bytes());
-        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
+        let user_input = "d";
+        let mut request_input = Cursor::new(String::from("y\n").into_bytes());
+        let request = epic_detail_page.parse_request(user_input, &mut request_input);
 
         println!("{:?}", user_input);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_some());
+        assert!(request.is_request_parsed());
 
         let mut request_cursor = Cursor::new(request.unwrap());
         let mut tag_buf = [0; 13];
@@ -890,34 +1200,33 @@ mod test {
         assert_eq!(epic_id, 0);
 
         println!("testing delete epic option with cancel...");
-        let user_option = "d";
-        let mut user_input = Cursor::new(String::from("n\n").into_bytes());
-        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
+        let user_input = "d";
+        let mut request_input = Cursor::new(String::from("n\n").into_bytes());
+        let request = epic_detail_page.parse_request(user_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_some());
-        // Should be empty
-        assert!(request.unwrap().is_empty());
+        assert!(request.is_refresh());
 
         println!("testing add story option...");
-        let user_option = "c";
-        let mut user_input = Cursor::new(String::from("Test Story\nA good story for testing purposes\n").into_bytes());
-        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
+        let user_input = "c";
+        let mut request_input = Cursor::new(String::from("Test Story\nA good story for testing purposes\n").into_bytes());
+        let request = epic_detail_page.parse_request(user_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_some());
+        assert!(request.is_request_parsed());
 
-        let mut request_cursor = Cursor::new(request.unwrap());
+        let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
+        let mut request_cursor = Cursor::new(request_bytes);
         let mut tag_buf=  [0; 13];
-        assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
+        assert!(request_cursor.read_exact(&mut tag_buf).is_ok());
         let Ok(Event::AddStory {peer_id, epic_id, story_name, story_description}) = block_on(Event::try_create_add_story(Uuid::new_v4(), &tag_buf, &mut request_cursor)) else { panic!("unable to parse request correctly") };
 
         assert_eq!(epic_id, 0);
@@ -925,21 +1234,24 @@ mod test {
         assert_eq!(story_description, String::from("A good story for testing purposes"));
 
         println!("testing get story detail option...");
-        let user_option = "97";
-        let mut user_input = Cursor::new(vec![]);
-        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
+        let user_input = "97";
+        let mut request_input = Cursor::new(vec![]);
+        let request = epic_detail_page.parse_request(user_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_some());
+        assert!(request.is_request_parsed());
 
+        let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
         let mut request_cursor = Cursor::new(request.unwrap());
         let mut tag_buf = [0; 13];
-        assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
-        let Ok(Event::GetStory {peer_id, epic_id, story_id}) = block_on(Event::try_create_get_story(Uuid::new_v4(), &tag_buf)) else { panic!("unable to parse event correctly") };
+        assert!(request_cursor.read_exact(&mut tag_buf).is_ok());
+        let Ok(Event::GetStory {peer_id, epic_id, story_id}) =
+            block_on(Event::try_create_get_story(Uuid::new_v4(), &tag_buf))
+            else { panic!("unable to parse event correctly") };
 
         assert_eq!(epic_id, 0);
         assert_eq!(story_id, 97);
@@ -963,34 +1275,36 @@ mod test {
         let story_detail_page = story_detail_page_res.unwrap();
 
         println!("testing previous option...");
-        let user_option = "p";
-        let mut request_data = Cursor::new(vec![]);
-        let request = block_on(story_detail_page.parse_request(user_option, &mut request_data));
+        let user_input = "p";
+        let mut request_input = Cursor::new(vec![]);
+        let request = story_detail_page.parse_request(user_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_none());
+        assert!(request.is_previous_page());
 
         println!("testing update option...");
-        let user_option = "u";
+        let user_input = "u";
         let mut request_input = Cursor::new(String::from("2\n").into_bytes());
-        let request = block_on(story_detail_page.parse_request(user_option, &mut request_input));
+        let request = story_detail_page.parse_request(user_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_some());
+        assert!(request.is_request_parsed());
 
-        let mut request_data = Cursor::new(request.unwrap());
+        let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
+        let mut request_data = Cursor::new(request_bytes);
         let mut tag_buf = [0; 13];
-        assert!(block_on(request_data.read_exact(&mut tag_buf)).is_ok());
+        assert!(request_data.read_exact(&mut tag_buf).is_ok());
 
-        let Ok(Event::UpdateStoryStatus { peer_id, epic_id,story_id, status}) = block_on(Event::try_create_update_story_status(Uuid::new_v4(), &tag_buf))
+        let Ok(Event::UpdateStoryStatus { peer_id, epic_id,story_id, status}) =
+            block_on(Event::try_create_update_story_status(Uuid::new_v4(), &tag_buf))
             else { panic!("unable to parse event correctly") };
 
         assert_eq!(epic_id, 1);
@@ -998,20 +1312,21 @@ mod test {
         assert_eq!(status, Status::try_from(2).expect("status should be created"));
 
         println!("testing delete option...");
-        let user_option = "d";
+        let user_input = "d";
         let mut request_input = Cursor::new(String::from("y\n").into_bytes());
-        let request = block_on(story_detail_page.parse_request(user_option, &mut request_input));
+        let request = story_detail_page.parse_request(user_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.is_some());
+        assert!(request.is_request_parsed());
 
-        let mut request_data = Cursor::new(request.unwrap());
+        let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
+        let mut request_data = Cursor::new(request_bytes);
         let mut tag_buf = [0; 13];
-        assert!(block_on(request_data.read_exact(&mut tag_buf)).is_ok());
+        assert!(request_data.read_exact(&mut tag_buf).is_ok());
 
         let Ok(Event::DeleteStory { peer_id, epic_id, story_id}) =
             block_on(Event::try_create_delete_story(Uuid::new_v4(), &tag_buf))
@@ -1020,22 +1335,22 @@ mod test {
         assert_eq!(epic_id, 1);
         assert_eq!(story_id, 97);
 
-        let user_option = "d";
+        let user_input = "d";
         let mut request_input = Cursor::new(String::from("n\n").into_bytes());
-        let request = block_on(story_detail_page.parse_request(user_option, &mut request_input));
+        let request = story_detail_page.parse_request(user_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_ok());
 
         let request = request.unwrap();
         println!("{:?}", request);
-        assert!(request.expect("should contain vector").is_empty());
+        assert!(request.is_refresh());
 
         println!("testing garbage input...");
-        let user_option = "asdojie038";
+        let user_input = "asdojie038";
         let mut request_input = Cursor::new(vec![2, 34, 5, 1]);
 
-        let request = block_on(story_detail_page.parse_request(user_option, &mut request_input));
+        let request = story_detail_page.parse_request(user_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_err());
