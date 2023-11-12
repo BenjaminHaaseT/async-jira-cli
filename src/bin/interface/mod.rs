@@ -28,17 +28,34 @@ pub mod prelude {
 /// the appropriate prompt to the user on stdout via `parse_response` method. Internally,
 /// an `Interface` will keep a stack of pages that can be navigated through by the client, and
 /// will display appropriate messages when errors arise.
-pub struct Interface<R: BufRead> {
+pub struct Interface<'a, R, T>
+where
+    R: BufRead,
+    T: ReadExt + Unpin,
+{
     page_stack: Vec<Box<dyn Page<R>>>,
+    read_connection:  &'a T,
+    write_connection: &'a T,
+    client_input: R,
 }
 
 // TODO: 1) move response conditional blocks into separate functions
-// TODO: 2) implement a parse_option method for taking a user selected option input from stdin
+// TODO: 2) Refactor design such that the interface has ownership connection to the stream
+// TODO: 3) implement a parse_option method for taking a user selected option input from stdin
 //          and parsing it correctly i.e. implementing the logic needed for the users given selection
-impl<R: BufRead> Interface<R> {
+impl<'a, R, T> Interface<'a, R, T>
+where
+    R: BufRead,
+    T: ReadExt + Unpin,
+{
     /// Creates a new `Interface`
-    pub fn new() -> Self {
-        Interface { page_stack: Vec::new() }
+    pub fn new(read_connection: &'a T, write_connection: &'a T, client_input: R) -> Self {
+        Interface {
+            page_stack: Vec::new() ,
+            read_connection,
+            write_connection,
+            client_input,
+        }
     }
 
     /// Attempt to read a response from the stream. If response read correctly, then parse frames
@@ -490,10 +507,9 @@ impl<R: BufRead> Interface<R> {
         Ok(())
     }
 
-
-
-
-
+    pub async fn run(&mut self) -> Result<(), UserError> {
+        todo!()
+    }
 }
 
 #[cfg(test)]

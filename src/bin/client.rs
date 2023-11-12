@@ -1,8 +1,9 @@
 //! Implements a simple server that will send requests and receive responses from the server.
 //! Gives users an interface to interact with the server.
 
+use std::io::{BufRead, stdin};
 use async_std::{
-    io::{stdin, BufRead, BufReader, Stdin},
+    io::ReadExt,
     net::{TcpStream, ToSocketAddrs},
     prelude::*,
     task,
@@ -82,5 +83,28 @@ impl std::error::Error for UserError {}
 //
 //     todo!()
 // }
+
+async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), UserError> {
+    println!("connection to {:?}...", server_addrs);
+    let stream = TcpStream::connect(server_addrs.clone())
+        .await
+        .map_err(|_| UserError::ServerConnection(format!("unable to connect to {:?}", server_addrs)))?;
+
+    // split into read/write halves
+    let (reader, writer) = (&stream, &stream);
+
+    // user input reader
+    let user_input = std::io::BufReader::new(stdin());
+
+    // create the interface
+    let mut interface = Interface::new(
+        reader,
+        writer,
+        user_input,
+    );
+
+    // TODO: log errors
+    interface.run().await
+}
 
 fn main() {}
