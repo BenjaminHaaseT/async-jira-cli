@@ -509,7 +509,7 @@ impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
                     Ok(n) if n > 0 => {
                         match user_final_choice.trim_end().to_lowercase().as_str() {
                             "y" => break Event::delete_epic_tag(self.frame.id).to_vec(),
-                            "n" => break vec![],
+                            "n" => return Ok(Action::Refresh),
                             _ => {
                                 println!("please choose a valid option");
                                 println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
@@ -747,7 +747,7 @@ impl<R: std::io::BufRead> Page<R> for StoryDetailPage {
                     Ok(n) if n > 0 => {
                         match user_final_choice.trim_end() {
                             "y" => break Event::get_delete_story_tag(self.story_frame.epic_id, self.story_frame.id).to_vec(),
-                            "n" => break vec![],
+                            "n" => return Ok(Action::Refresh),
                             _ => {
                                 println!("please choose a valid option");
                                 println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
@@ -857,13 +857,13 @@ mod test {
 
         let homepage = homepage_res.unwrap();
 
-        homepage.print_page();
+        <HomePage as Page<Cursor<Vec<u8>>>>::print_page(&homepage);
     }
 
     #[test]
     fn test_print_page_homepage() {
         let mut home_page = HomePage { epic_frames: vec![] };
-        home_page.print_page();
+        <HomePage as Page<Cursor<Vec<u8>>>>::print_page(&home_page);
 
         home_page.epic_frames.push(
             EpicFrame {
@@ -892,7 +892,7 @@ mod test {
             }
         );
 
-        home_page.print_page();
+        <HomePage as Page<Cursor<Vec<u8>>>>::print_page(&home_page);
     }
 
     #[test]
@@ -907,12 +907,13 @@ mod test {
             story_frames: vec![]
         };
 
-        epic_detail_page.print_page();
+        // epic_detail_page.print_page();
+        <EpicDetailPage as Page<Cursor<Vec<u8>>>>::print_page(&epic_detail_page);
 
         epic_detail_page.story_frames.push(StoryFrame { id: 1, epic_id: 0, name: "Test Story".to_string(), description: "A simple test Story".to_string(), status: Status::Open });
         epic_detail_page.story_frames.push(StoryFrame { id: 33, epic_id: 0, name: "Another Test Story".to_string(), description: "Another simple test Story".to_string(), status: Status::InProgress });
 
-        epic_detail_page.print_page();
+        <EpicDetailPage as Page<Cursor<Vec<u8>>>>::print_page(&epic_detail_page);
     }
 
     #[test]
@@ -942,7 +943,7 @@ mod test {
 
         let epic_detail_page = epic_detail_page_res.unwrap();
 
-        epic_detail_page.print_page();
+        <EpicDetailPage as Page<Cursor<Vec<u8>>>>::print_page(&epic_detail_page);
     }
 
     #[test]
@@ -976,11 +977,12 @@ mod test {
 
         let test_story_detail_page = test_story_detail_page_res.unwrap();
 
-        test_story_detail_page.print_page();
+        <StoryDetailPage as Page<Cursor<Vec<u8>>>>::print_page(&test_story_detail_page);
     }
 
     #[test]
     fn test_home_page_parse_request() {
+        use async_std::io::{ReadExt, BufRead};
         let mut homepage = HomePage {epic_frames: vec![] };
         homepage.epic_frames.push(
             EpicFrame {
@@ -1047,9 +1049,9 @@ mod test {
         let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
 
         // Attempt to parse the encoded request
-        let mut request_cursor = Cursor::new(request_bytes);
+        let mut request_cursor = async_std::io::Cursor::new(request_bytes);
         let mut tag_buf = [0u8; 13];
-        let res = request_cursor.read_exact(&mut tag_buf);
+        let res = block_on(request_cursor.read_exact(&mut tag_buf));
         println!("{:?}", res);
         assert!(res.is_ok());
 
@@ -1075,9 +1077,9 @@ mod test {
 
         // Attempt to parse the encoded request
         let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
-        let mut request_cursor = Cursor::new(request_bytes);
+        let mut request_cursor = async_std::io::Cursor::new(request_bytes);
         let mut tag_buf = [0u8; 13];
-        let res = request_cursor.read_exact(&mut tag_buf);
+        let res = block_on(request_cursor.read_exact(&mut tag_buf));
         println!("{:?}", res);
         assert!(res.is_ok());
 
@@ -1092,7 +1094,7 @@ mod test {
         println!("Testing get epic option...");
         let user_input = "97";
         let mut request_input = Cursor::new(vec![0u8]);
-        let request = homepage.parse_request(request_input, &mut request_input);
+        let request = homepage.parse_request(user_input, &mut request_input);
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -1102,9 +1104,9 @@ mod test {
         assert!(request.is_request_parsed());
 
         let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
-        let mut request_cursor = Cursor::new(request_bytes);
+        let mut request_cursor = async_std::io::Cursor::new(request_bytes);
         let mut tag_buf = [0u8; 13];
-        let res = request_cursor.read_exact(&mut tag_buf);
+        let res = block_on(request_cursor.read_exact(&mut tag_buf));
 
         println!("{:?}", res);
         assert!(res.is_ok());
@@ -1126,6 +1128,8 @@ mod test {
     fn test_epic_detail_page_parse_request() {
         use std::path::PathBuf;
         use std::collections::HashMap;
+        use async_std::io::{ReadExt, BufRead};
+
         // Create epic for creating the epic detail page
         let epic = Epic::new(
             0,
@@ -1168,10 +1172,10 @@ mod test {
         let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
 
         // Simulate reading the request from the user
-        let mut request_cursor = Cursor::new(request_bytes);
+        let mut request_cursor = async_std::io::Cursor::new(request_bytes);
         // read the tag from the request
         let mut tag_buf = [0; 13];
-        assert!(request_cursor.read_exact(&mut tag_buf).is_ok());
+        assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
         // Attempt to parse an event from the request
         let Ok(Event::UpdateEpicStatus {peer_id, epic_id, status}) =
             block_on(Event::try_create_update_epic_status(Uuid::new_v4(), &tag_buf))
@@ -1192,7 +1196,8 @@ mod test {
         println!("{:?}", request);
         assert!(request.is_request_parsed());
 
-        let mut request_cursor = Cursor::new(request.unwrap());
+        let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
+        let mut request_cursor = async_std::io::Cursor::new(request_bytes);
         let mut tag_buf = [0; 13];
         assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
         let Ok(Event::DeleteEpic {peer_id, epic_id}) = block_on(Event::try_create_delete_epic(Uuid::new_v4(), &tag_buf)) else { panic!("unable to parse request correctly") };
@@ -1224,9 +1229,9 @@ mod test {
         assert!(request.is_request_parsed());
 
         let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
-        let mut request_cursor = Cursor::new(request_bytes);
+        let mut request_cursor = async_std::io::Cursor::new(request_bytes);
         let mut tag_buf=  [0; 13];
-        assert!(request_cursor.read_exact(&mut tag_buf).is_ok());
+        assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
         let Ok(Event::AddStory {peer_id, epic_id, story_name, story_description}) = block_on(Event::try_create_add_story(Uuid::new_v4(), &tag_buf, &mut request_cursor)) else { panic!("unable to parse request correctly") };
 
         assert_eq!(epic_id, 0);
@@ -1246,9 +1251,9 @@ mod test {
         assert!(request.is_request_parsed());
 
         let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
-        let mut request_cursor = Cursor::new(request.unwrap());
+        let mut request_cursor = async_std::io::Cursor::new(request_bytes);
         let mut tag_buf = [0; 13];
-        assert!(request_cursor.read_exact(&mut tag_buf).is_ok());
+        assert!(block_on(request_cursor.read_exact(&mut tag_buf)).is_ok());
         let Ok(Event::GetStory {peer_id, epic_id, story_id}) =
             block_on(Event::try_create_get_story(Uuid::new_v4(), &tag_buf))
             else { panic!("unable to parse event correctly") };
@@ -1259,13 +1264,14 @@ mod test {
         println!("testing bogus request option...");
         let user_option = "du98fd9e";
         let mut user_input = Cursor::new(String::from("basdfoiub\n"));
-        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
+        let request = epic_detail_page.parse_request(user_option, &mut user_input);
         println!("{:?}", request);
         assert!(request.is_err());
     }
 
     #[test]
     fn test_story_detail_page_parse_request() {
+        use async_std::io::ReadExt;
         let test_story = Story::new(97, 1, String::from("Test story"), String::from("A good story for testing purposes"), Status::InProgress);
         let story_detail_page_res = StoryDetailPage::try_create(test_story.as_bytes());
 
@@ -1299,9 +1305,9 @@ mod test {
         assert!(request.is_request_parsed());
 
         let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
-        let mut request_data = Cursor::new(request_bytes);
+        let mut request_data = async_std::io::Cursor::new(request_bytes);
         let mut tag_buf = [0; 13];
-        assert!(request_data.read_exact(&mut tag_buf).is_ok());
+        assert!(block_on(request_data.read_exact(&mut tag_buf)).is_ok());
 
         let Ok(Event::UpdateStoryStatus { peer_id, epic_id,story_id, status}) =
             block_on(Event::try_create_update_story_status(Uuid::new_v4(), &tag_buf))
@@ -1324,9 +1330,9 @@ mod test {
         assert!(request.is_request_parsed());
 
         let Action::RequestParsed(request_bytes) = request else { panic!("request should be parsed") };
-        let mut request_data = Cursor::new(request_bytes);
+        let mut request_data = async_std::io::Cursor::new(request_bytes);
         let mut tag_buf = [0; 13];
-        assert!(request_data.read_exact(&mut tag_buf).is_ok());
+        assert!(block_on(request_data.read_exact(&mut tag_buf)).is_ok());
 
         let Ok(Event::DeleteStory { peer_id, epic_id, story_id}) =
             block_on(Event::try_create_delete_story(Uuid::new_v4(), &tag_buf))
