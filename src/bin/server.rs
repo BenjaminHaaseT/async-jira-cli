@@ -477,7 +477,7 @@ async fn broker(
                                     .send(Response::StoryStatusUpdateOk(
                                         epic_id,
                                         story_id,
-                                        epic.as_bytes(),
+                                        epic.get_story(story_id).unwrap().as_bytes(),
                                     ))
                                     .await,
                                 peer_id,

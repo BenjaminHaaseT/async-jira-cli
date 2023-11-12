@@ -21,7 +21,7 @@ pub mod prelude {
 /// The `Page` trait allows for different types of CLI interface pages to share
 /// the functionality of any typical CLI page i.e. `print_page`. The main purpose is to allow
 /// different types of pages to be held in a single data structure as trait objects.
-pub trait Page<R: std::io::BufRead> {
+pub trait Page<R: BufRead> {
     /// Required method, prints the page's contents to the console in a way that is formatted 
     fn print_page(&self);
     /// Required method, takes `request_option` and `input_reader` and attempts to create 
