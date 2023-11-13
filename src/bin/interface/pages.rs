@@ -5,9 +5,8 @@ use crate::UserError;
 use async_jira_cli::models::prelude::*;
 use async_jira_cli::utils::prelude::*;
 use async_jira_cli::events::prelude::*;
-// use async_std::io::{ReadExt, BufRead};
 use std::io::{Read, BufRead, Cursor, Seek, ErrorKind};
-// use async_std::io::prelude::BufReadExt;
+use std::ops::DerefMut;
 use unicode_width;
 
 pub mod prelude {
@@ -21,13 +20,13 @@ pub mod prelude {
 /// The `Page` trait allows for different types of CLI interface pages to share
 /// the functionality of any typical CLI page i.e. `print_page`. The main purpose is to allow
 /// different types of pages to be held in a single data structure as trait objects.
-pub trait Page<R: BufRead> {
+pub trait Page<R: std::io::BufRead> {
     /// Required method, prints the page's contents to the console in a way that is formatted 
     fn print_page(&self);
     /// Required method, takes `request_option` and `input_reader` and attempts to create 
     /// an `Action`. Returns `Result`, the `Ok` variant if the request was parsed successfully, otherwise
     /// the `Err` variant.
-    fn parse_request(&self, request_option: &str, input_reader: R) -> Result<Action, UserError>;
+    fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError>;
 }
 
 /// Represents the possible states that prompt the `Interface` to update.
@@ -177,7 +176,7 @@ impl<R: std::io::BufRead> Page<R> for HomePage {
         println!();
     }
 
-    fn parse_request(&self, request_option: &str, input_reader: R) -> Result<Action, UserError> {
+    fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "q" {
             return Ok(Action::Quit);
         } else if request_option.to_lowercase() == "c" {
@@ -454,7 +453,7 @@ impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
         println!();
     }
 
-    fn parse_request(&self, request_option: &str, input_reader: R) -> Result<Action, UserError> {
+    fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
             Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
@@ -703,7 +702,7 @@ impl<R: std::io::BufRead> Page<R> for StoryDetailPage {
         println!("[p] previous | [u] update story | [d] delete story");
     }
 
-    fn parse_request(&self, request_option: &str, input_reader: R) -> Result<Action, UserError> {
+    fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
             Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {

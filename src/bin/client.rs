@@ -91,15 +91,14 @@ async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), Use
         .map_err(|_| UserError::ServerConnection(format!("unable to connect to {:?}", server_addrs)))?;
 
     // split into read/write halves
-    let (reader, writer) = (&stream, &stream);
+    // let (reader, writer) = (&stream, &stream);
 
     // user input reader
     let user_input = std::io::BufReader::new(stdin());
 
     // create the interface
     let mut interface = Interface::new(
-        reader,
-        writer,
+        stream,
         user_input,
     );
 
