@@ -129,210 +129,42 @@ where
 
         // Check the type of response and then parse accordingly
         if type_and_flag & 1 != 0 {
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_|
-            //     UserError::ParseResponseError(format!("unable to parse response from server correctly"))
-            // )?;
-            //
-            // println!("connected to database successfully");
-            // println!();
-            //
-            // // Attempt to create homepage
-            // let homepage = Box::new(HomePage::try_create(data)?);
-            //
-            // // Display homepage if successful
-            // <HomePage as Page<R>>::print_page(&homepage);
-            // println!();
-            //
-            // // Save homepage to `self.page_stack`
-            // self.page_stack.push(homepage);
             self.parse_successful_connection_response(data_len).await?;
+
         } else if type_and_flag & 2 != 0 {
             // This is a suspicious case, it should not happen so return an internal server error to the client
             // TODO: Add logging for this event as well
             return Err(UserError::InternalServerError);
         } else if type_and_flag & 4 != 0 {
-            // Read updated homepage data
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_|
-            //         UserError::ParseResponseError(format!("unable to parse response from server correctly"))
-            //     )?;
-            //
-            // // Attempt to create the new homepage
-            // let homepage = Box::new(HomePage::try_create(data)?);
-            //
-            // // display success message to user
-            // println!("epic added successfully, epic id: {}", epic_id);
-            // println!();
-            //
-            // // Display homepage if successful
-            // <HomePage as Page<R>>::print_page(&homepage);
-            // println!();
-            //
-            // self.page_stack = vec![homepage];
             self.parse_add_epic_response(epic_id, data_len).await?;
+
         } else if type_and_flag & 8 != 0 {
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_|
-            //         UserError::ParseResponseError(format!("unable to parse response from server correctly"))
-            //     )?;
-            // // Attempt to create homepage
-            // let homepage = Box::new(HomePage::try_create(data)?);
-            //
-            // println!("epic with id: {} was deleted successfully", epic_id);
-            // println!();
-            //
-            // // Display homepage if successful
-            // <HomePage as Page<R>>::print_page(&homepage);
-            // println!();
-            //
-            // self.page_stack = vec![homepage];
             self.parse_delete_epic_response(epic_id, data_len).await?;
+
         } else if type_and_flag & 16 != 0 {
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_| UserError::ParseResponseError(String::from("unable to parse response from server correctly")))?;
-            // let epic_detail_page = Box::new(EpicDetailPage::try_create(data)?);
-            //
-            // println!("get epic with id: {} successful", epic_id);
-            // println!();
-            //
-            // <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
-            //
-            // self.page_stack.push(epic_detail_page);
             self.parse_get_epic_response(epic_id, data_len).await?;
+
         } else if type_and_flag & 32 != 0 {
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_| UserError::ParseResponseError(String::from("unable to parse response from server correctly")))?;
-            //
-            // let epic_detail_page = Box::new(EpicDetailPage::try_create(data)?);
-            //
-            // println!("updated status of epic with id: {} successful", epic_id);
-            // println!();
-            //
-            // <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
-            //
-            // assert!(!self.page_stack.is_empty());
-            // self.page_stack.pop();
-            // self.page_stack.push(epic_detail_page);
             self.parse_update_epic_status_response(epic_id, data_len).await?;
 
         } else if type_and_flag & 64 != 0 {
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_| UserError::ParseResponseError(String::from("unable to parse response from server correctly")))?;
-            //
-            // let homepage = Box::new(HomePage::try_create(data)?);
-            //
-            // println!("epic with id: {} does not exist", epic_id);
-            // println!();
-            //
-            // <HomePage as Page<R>>::print_page(&homepage);
-            //
-            // self.page_stack = vec![homepage];
             self.parse_epic_does_not_exist_response(epic_id, data_len).await?;
+
         } else if type_and_flag & 128 != 0 {
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_| UserError::ParseResponseError(String::from("unable to parse response from server correctly")))?;
-            //
-            // let story_detail_page = Box::new(StoryDetailPage::try_create(data)?);
-            //
-            // println!("get story with id: {} successful", story_id);
-            // println!();
-            //
-            // <StoryDetailPage as Page<R>>::print_page(&story_detail_page);
-            // self.page_stack.push(story_detail_page);
             self.parse_get_story_response(story_id, data_len).await?;
+
         } else if type_and_flag & 256 != 0 {
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_| UserError::ParseResponseError(String::from("unable to parse response from server correctly")))?;
-            //
-            // let epic_detail_page = Box::new(EpicDetailPage::try_create(data)?);
-            //
-            // println!("story with id: {} does not exist", story_id);
-            // println!();
-            //
-            // <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
-            // assert!(!self.page_stack.is_empty());
-            //
-            // while self.page_stack.len() > 1 {
-            //     self.page_stack.pop();
-            // }
-            //
-            // self.page_stack.push(epic_detail_page);
             self.parse_story_does_not_exist_response(story_id, data_len).await?;
+
         } else if type_and_flag & 512 != 0 {
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_| UserError::ParseResponseError(String::from("unable to parse response from server correctly")))?;
-            //
-            // let epic_detail_page = Box::new(EpicDetailPage::try_create(data)?);
-            //
-            // println!("story with id: {} was added successfully", story_id);
-            // println!();
-            //
-            // <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
-            // assert!(!self.page_stack.is_empty());
-            //
-            // while self.page_stack.len() > 1 {
-            //     self.page_stack.pop();
-            // }
-            //
-            // self.page_stack.push(epic_detail_page);
             self.parse_add_story_response(story_id, data_len).await?;
+
         } else if type_and_flag & 1024 != 0 {
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_| UserError::ParseResponseError(String::from("unable to parse response from server correctly")))?;
-            //
-            // let epic_detail_page = Box::new(EpicDetailPage::try_create(data)?);
-            //
-            // println!("story with id: {} was deleted successfully", story_id);
-            // println!();
-            //
-            // <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
-            // assert!(!self.page_stack.is_empty());
-            // while self.page_stack.len() > 1 {
-            //     self.page_stack.pop();
-            // }
-            //
-            // self.page_stack.push(epic_detail_page);
             self.parse_delete_story_response(story_id, data_len).await?;
+
         } else if type_and_flag & 2048 != 0 {
-            // let mut data = vec![0; data_len as usize];
-            // stream.read_exact(data.as_mut_slice())
-            //     .await
-            //     .map_err(|_| UserError::ParseResponseError(String::from("unable to parse response from server correctly")))?;
-            //
-            // let story_detail_page = Box::new(StoryDetailPage::try_create(data)?);
-            //
-            // println!("updated status of story with id: {} was successful", story_id);
-            // println!();
-            //
-            // <StoryDetailPage as Page<R>>::print_page(&story_detail_page);
-            // assert!(!self.page_stack.is_empty());
-            // while self.page_stack.len() > 2 {
-            //     self.page_stack.pop();
-            // }
-            //
-            // self.page_stack.push(story_detail_page);
             self.parse_update_story_status_response(story_id, data_len).await?;
+
         } else if type_and_flag & 4096 != 0 {
             println!("request not parsed, please try again");
             println!();
@@ -575,8 +407,6 @@ where
         self.page_stack.push(story_detail_page);
         Ok(())
     }
-
-
 }
 
 #[cfg(test)]

@@ -85,7 +85,7 @@ impl std::error::Error for UserError {}
 // }
 
 async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), UserError> {
-    println!("connection to {:?}...", server_addrs);
+    println!("connecting to {:?}...", server_addrs);
     let stream = TcpStream::connect(server_addrs.clone())
         .await
         .map_err(|_| UserError::ServerConnection(format!("unable to connect to {:?}", server_addrs)))?;
