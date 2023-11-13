@@ -63,60 +63,8 @@ pub struct HomePage {
 }
 
 impl HomePage {
-    /// Associated method  for accepting a request option then performing the appropriate logic for constructing
-    /// the request, i.e. prompting the user for input or displaying an error message etc...
-    // pub async fn parse_request<R: BufRead + ReadExt + Unpin>(request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
-    //     if request_option.to_lowercase() == "q" {
-    //         return Ok(None);
-    //     } else if request_option.to_lowercase() == "c" {
-    //         // User has selected to add a new epic to the database
-    //         let mut input_reader = input_reader;
-    //         let mut epic_name = String::new();
-    // 
-    //         println!("epic name:");
-    // 
-    //         let _ = input_reader.read_line(&mut epic_name)
-    //             .await
-    //             .map_err(|_| UserError::ParseInputError)?;
-    // 
-    //         // Remove new line character from name
-    //         epic_name = epic_name.trim_end_matches('\n').to_string();
-    // 
-    //         // Ensure the length of the name can fit inside 8 bytes
-    //         if epic_name.as_bytes().len() > u32::MAX as usize {
-    //             return Err(UserError::InvalidInput(String::from("Invalid input, epic's name is to large")));
-    //         }
-    //         println!();
-    // 
-    //         let mut epic_description = String::new();
-    // 
-    //         println!("epic description: ");
-    // 
-    //         let _ = input_reader.read_line(&mut epic_description)
-    //             .await
-    //             .map_err(|_| UserError::ParseInputError)?;
-    // 
-    //         // Remove the new line character from description
-    //         epic_description = epic_description.trim_end_matches('\n').to_string();
-    // 
-    //         // Ensure the length of the description can fit inside 8 bytes
-    //         if epic_description.as_bytes().len()  > u32::MAX as usize {
-    //             return Err(UserError::InvalidInput(String::from("Invalid input, epic's description is to large")));
-    //         }
-    // 
-    //         // Get the bytes for the request from the tag, name and description
-    //         let mut request_bytes = Event::add_epic_tag(&epic_name, &epic_description).to_vec();
-    //         request_bytes.extend_from_slice(epic_name.as_bytes());
-    //         request_bytes.extend_from_slice(epic_description.as_bytes());
-    //         Ok(Some(request_bytes))
-    //     } else if let Ok(id) = request_option.parse::<u32>() {
-    //         // User has selected to request details for an epic
-    //         let request_bytes = Event::get_epic_tag(id).to_vec();
-    //         Ok(Some(request_bytes))
-    //     } else {
-    //         Err(UserError::InvalidRequest)
-    //     }
-    // }
+
+
 
     /// Associated method, attempts to create a new `HomePage` struct from `data`.
     /// Returns a `Result`, the `Ok` variant if creating was successful, otherwise `Err`.
@@ -176,6 +124,10 @@ impl<R: std::io::BufRead> Page<R> for HomePage {
         println!();
     }
 
+    /// Attempts to create a valid actionable request from `request_option` and `input_reader`.
+    /// The method will determine what action needs to be returned, given `request_option`.
+    /// Ensures that any valid request is properly formatted for sending to the server if a successful
+    /// `Action::RequestParsed` is returned.
     fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "q" {
             return Ok(Action::Quit);
@@ -236,6 +188,7 @@ pub struct EpicDetailPage {
 }
 
 impl EpicDetailPage {
+
     /// Attempts to create a new `EpicDetailPage` from `data`. Returns a `Result`, the `Ok` variant
     /// if creating was successful, otherwise `Err`.
     pub fn try_create(data: Vec<u8>) -> Result<Self, UserError> {
@@ -278,134 +231,6 @@ impl EpicDetailPage {
 
         Ok(EpicDetailPage { frame, story_frames })
     }
-
-    /// Attempts to create a vector of bytes that encodes the request received from user input.
-    /// Takes `request_option` which represents the user request and `input_reader` which is the
-    /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
-    /// the request was created successfully, otherwise
-    // pub async fn parse_request<R: BufRead + ReadExt + Unpin>(&self, request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
-    //     if request_option.to_lowercase() == "p" {
-    //         Ok(None)
-    //     } else if request_option.to_lowercase() == "u" {
-    //         // Update epic's status in this case
-    //         let mut input_reader = input_reader;
-    //         let mut new_status_buf = String::new();
-    //
-    //         // read the new status from the user, use a validation loop
-    //         let new_status = loop {
-    //             self.print_status_update_menu();
-    //             match input_reader.read_line(&mut new_status_buf).await {
-    //                 Ok(n) if n > 0 => {
-    //                     // Remove new line character from buffer
-    //                     new_status_buf = new_status_buf.trim_end().to_string();
-    //                     match new_status_buf.parse::<u8>() {
-    //                         Ok(s) if (0..4u8).contains(&s) => {
-    //                             break s;
-    //                         }
-    //                         Ok(s) => {
-    //                             println!("invalid status selection, please try again");
-    //                             eprintln!("invalid status selection, please try again");
-    //                         }
-    //                         Err(_) => {
-    //                             println!("unable to parse status selection, please try again");
-    //                             eprintln!("unable to parse status selection, please try again");
-    //                         }
-    //                     }
-    //                 }
-    //                 Ok(n) => {
-    //                     println!("no input entered, please try again");
-    //                     eprintln!("no input entered, please try again");
-    //                 }
-    //                 Err(_) => {
-    //                     println!("unable to read input, please try again");
-    //                     eprintln!("unable to read input, please try again");
-    //                 }
-    //             }
-    //             new_status_buf.clear();
-    //         };
-    //         // Create the request bytes
-    //         let request_bytes = Event::get_update_epic_status_tag(self.frame.id, new_status).to_vec();
-    //         Ok(Some(request_bytes))
-    //     } else if request_option.to_lowercase() == "d" {
-    //         let mut input_reader = input_reader;
-    //
-    //         // Delete the epic
-    //         println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
-    //         let mut user_final_choice = String::new();
-    //
-    //         let request_bytes = loop {
-    //             match input_reader.read_line(&mut user_final_choice).await {
-    //                 Ok(n) if n > 0 => {
-    //                     match user_final_choice.trim_end().to_lowercase().as_str() {
-    //                         "y" => break Event::delete_epic_tag(self.frame.id).to_vec(),
-    //                         "n" => break vec![],
-    //                         _ => {
-    //                             println!("please choose a valid option");
-    //                             println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
-    //                         }
-    //                     }
-    //                 }
-    //                 Ok(n) => {
-    //                     println!("no input entered, please choose a valid option");
-    //                     eprintln!("no input entered, please choose a valid option");
-    //                 }
-    //                 Err(e) => {
-    //                     println!("unable to read input, please try again");
-    //                     eprintln!("unable to read input, please try again");
-    //                 }
-    //             }
-    //             user_final_choice.clear();
-    //         };
-    //
-    //         Ok(Some(request_bytes))
-    //     } else if request_option.to_lowercase() == "c" {
-    //         // Create a new story
-    //         let mut input_reader = input_reader;
-    //         let mut story_name = String::new();
-    //
-    //         println!("story name:");
-    //
-    //         input_reader.read_line(&mut story_name)
-    //             .await
-    //             .map_err(|_| UserError::ParseInputError)?;
-    //
-    //         // remove new line character at the end
-    //         story_name = story_name.trim_end_matches('\n').to_string();
-    //
-    //         // ensure the length of story_name in bytes can fit within 8 bytes
-    //         if story_name.as_bytes().len()  > u32::MAX as usize {
-    //             return Err(UserError::InvalidInput(String::from("invalid input, story's name is too large")));
-    //         }
-    //
-    //         println!();
-    //
-    //         let mut story_description = String::new();
-    //         println!("story description: ");
-    //
-    //         input_reader.read_line(&mut story_description)
-    //             .await
-    //             .map_err(|_| UserError::ParseInputError)?;
-    //
-    //         // remove new line character at the end
-    //         story_description = story_description.trim_end_matches('\n').to_string();
-    //
-    //         if story_description.as_bytes().len() > u32::MAX as usize {
-    //             return Err(UserError::InvalidInput(String::from("invalid input, story's description is too large")));
-    //         }
-    //
-    //         let mut request_bytes = Event::add_story_tag(self.frame.id, &story_name, &story_description).to_vec();
-    //         request_bytes.extend_from_slice(story_name.as_bytes());
-    //         request_bytes.extend_from_slice(story_description.as_bytes());
-    //
-    //         Ok(Some(request_bytes))
-    //     } else if let Ok(story_id) = request_option.parse::<u32>() {
-    //         // navigate to story detail page
-    //         let request_bytes = Event::get_story_tag(self.frame.id, story_id).to_vec();
-    //         Ok(Some(request_bytes))
-    //     } else {
-    //         Err(UserError::InvalidRequest)
-    //     }
-    // }
 
     /// A helper function for displaying a single line in the implementation of `print_page`.
     fn print_line(story_frame: &StoryFrame) {
@@ -453,6 +278,10 @@ impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
         println!();
     }
 
+    /// Attempts to create a vector of bytes that encodes the request received from user input.
+    /// Takes `request_option` which represents the user request and `input_reader` which is the
+    /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
+    /// the request was created successfully, otherwise
     fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
             Ok(Action::PreviousPage)
@@ -603,77 +432,7 @@ impl StoryDetailPage {
         Ok(StoryDetailPage { story_frame })
     }
 
-    /// Attempts to create a vector of bytes that encodes the request received from user input.
-    /// Takes `request_option` which represents the user request and `input_reader` which is the
-    /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
-    /// the request was created successfully, otherwise returns `Err`
-    // pub async fn parse_request<R: ReadExt + Unpin>(&self, request_option: &str, input_reader: R) -> Result<Option<Vec<u8>>, UserError> {
-    //     if request_option.to_lowercase() == "p" {
-    //         Ok(None)
-    //     } else if request_option.to_lowercase() == "u" {
-    //         let mut input_reader = input_reader;
-    //         let mut status_buf = String::new();
-    //
-    //         // Validation loop for getting new status from the user
-    //         let new_status = loop {
-    //             self.print_status_update_menu();
-    //             match input_reader.read_to_string(&mut status_buf).await {
-    //                 Ok(_n) => {
-    //                     // Remove new line character from buffer
-    //                     match status_buf.trim_end().parse::<u8>() {
-    //                         Ok(s) if (0..4).contains(&s) => break s,
-    //                         Ok(_s)  => {
-    //                             println!("error parsing input as a valid status, please try again");
-    //                             eprintln!("error parsing input as a valid status, please try again");
-    //                         }
-    //                         Err(e) => {
-    //                             println!("error parsing input, please try again");
-    //                             eprintln!("error parsing input, please try again");
-    //                         }
-    //                     }
-    //                 }
-    //                 Err(_) => {
-    //                     println!("error reading input, please try again");
-    //                     eprintln!("error reading input, please try again");
-    //                 }
-    //             }
-    //             status_buf.clear();
-    //         };
-    //
-    //         let request_bytes = Event::get_update_story_status_tag(self.story_frame.epic_id, self.story_frame.id, new_status).to_vec();
-    //         Ok(Some(request_bytes))
-    //     } else if request_option.to_lowercase() == "d" {
-    //         let mut user_final_choice = String::new();
-    //         let mut input_reader = input_reader;
-    //         println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
-    //         let request_bytes = loop {
-    //             match input_reader.read_to_string(&mut user_final_choice).await {
-    //                 Ok(n) if n > 0 => {
-    //                     match user_final_choice.trim_end() {
-    //                         "y" => break Event::get_delete_story_tag(self.story_frame.epic_id, self.story_frame.id).to_vec(),
-    //                         "n" => break vec![],
-    //                         _ => {
-    //                             println!("please choose a valid option");
-    //                             println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
-    //                         }
-    //                     }
-    //                 }
-    //                 Ok(n) => {
-    //                     println!("no input entered, please try again");
-    //                     eprintln!("no input entered, please try again");
-    //                 }
-    //                 Err(e) => {
-    //                     println!("error reading input, please try again");
-    //                     eprintln!("error reading input, please try again");
-    //                 }
-    //             }
-    //             user_final_choice.clear();
-    //         };
-    //         Ok(Some(request_bytes))
-    //     } else {
-    //         Err(UserError::InvalidRequest)
-    //     }
-    // }
+
 
     /// A helper function for displaying the status selection menu
     fn print_status_update_menu(&self) {
@@ -702,6 +461,10 @@ impl<R: std::io::BufRead> Page<R> for StoryDetailPage {
         println!("[p] previous | [u] update story | [d] delete story");
     }
 
+    /// Attempts to create a vector of bytes that encodes the request received from user input.
+    /// Takes `request_option` which represents the user request and `input_reader` which is the
+    /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
+    /// the request was created successfully, otherwise returns `Err`
     fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
             Ok(Action::PreviousPage)
