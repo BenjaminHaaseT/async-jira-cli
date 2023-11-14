@@ -26,7 +26,7 @@ pub enum Response {
 
     /// Response for successful retrieval of an `Epic`, holds
     /// the encoded data of the epic in a `Vec<u8>`
-    GetEpicOk(Vec<u8>),
+    GetEpicOk(u32, Vec<u8>),
 
     /// Response for a successful status update for a particular `Epic`, holds the id of
     /// the updated epic and its encoded data in `u32` and `Vec<u8>` respectively
@@ -95,7 +95,7 @@ impl AsBytes for Response {
             Response::ClientAlreadyExists => {}
             Response::AddedEpicOk(_, data) => bytes.extend_from_slice(data.as_slice()),
             Response::DeletedEpicOk(_, data) => bytes.extend_from_slice(data.as_slice()),
-            Response::GetEpicOk(data) => bytes.extend_from_slice(data.as_slice()),
+            Response::GetEpicOk(_,data) => bytes.extend_from_slice(data.as_slice()),
             Response::EpicStatusUpdateOk(_, data) => bytes.extend_from_slice(data.as_slice()),
             Response::EpicDoesNotExist(_, data) => bytes.extend_from_slice(data.as_slice()),
             Response::GetStoryOk(data) => bytes.extend_from_slice(data.as_slice()),
@@ -159,9 +159,10 @@ impl BytesEncode for Response {
                 // }
                 encoded_tag
             }
-            Response::GetEpicOk(data) => {
+            Response::GetEpicOk(epic_id, data) => {
                 encoded_tag[0] ^= (1 << 7);
                 encoded_tag[1] ^= (1 << 4);
+                Response::encode_epic_id(&mut encoded_tag, *epic_id);
                 Response::encode_data_len(&mut encoded_tag, data);
                 encoded_tag
             }
@@ -263,6 +264,7 @@ impl BytesEncode for Response {
         type_and_flag_bytes ^= tag[1] as u16;
         if type_and_flag_bytes & (1 << 2) != 0
             || type_and_flag_bytes & (1 << 3) != 0
+            || type_and_flag_bytes & (1 << 4) != 0
             || type_and_flag_bytes & (1 << 5) != 0
             || type_and_flag_bytes & (1 << 6) != 0
             || type_and_flag_bytes & (1 << 8) != 0
@@ -316,10 +318,10 @@ mod test {
         println!("{:?}", encoding);
         assert_eq!(encoding, [128, 8, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::GetEpicOk(vec![1, 2, 3, 4, 5]);
+        let response = Response::GetEpicOk(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 16, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
         let response = Response::EpicStatusUpdateOk(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
@@ -396,12 +398,12 @@ mod test {
         assert_eq!(decoding, (32776, 2353, 0, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::GetEpicOk(vec![1, 2, 3, 4, 5]);
+        let response = Response::GetEpicOk(2353, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 16, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(&encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (32784, 0, 0, 5));
+        assert_eq!(decoding, (32784, 2353, 0, 5));
         println!("{:016b}", decoding.0);
 
         let response = Response::EpicStatusUpdateOk(2353, vec![1, 2, 3, 4, 5]);
@@ -492,10 +494,10 @@ mod test {
         println!("{:?}", bytes);
         assert_eq!(bytes, vec![128, 8, 49, 9, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
-        let response = Response::GetEpicOk(vec![1, 2, 3]);
+        let response = Response::GetEpicOk(2353, vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [128, 16, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, [128, 16, 49, 9, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::EpicStatusUpdateOk(2353, vec![1, 2, 3]);
         let bytes = response.as_bytes();

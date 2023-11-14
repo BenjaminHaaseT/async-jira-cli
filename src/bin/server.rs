@@ -294,7 +294,7 @@ async fn broker(
                     Some(epic) => {
                         let epic_bytes = epic.as_bytes();
                         let _ = log_connection_error(
-                            client_sender.send(Response::GetEpicOk(epic_bytes)).await,
+                            client_sender.send(Response::GetEpicOk(epic_id,epic_bytes)).await,
                             peer_id,
                         );
                     }

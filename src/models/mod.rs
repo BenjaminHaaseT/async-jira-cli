@@ -326,6 +326,10 @@ impl DbState {
             )))
         }
     }
+
+    pub fn last_unique_id(&self) -> u32 {
+        self.last_unique_id
+    }
 }
 
 impl AsBytes for DbState {

@@ -64,8 +64,6 @@ pub struct HomePage {
 
 impl HomePage {
 
-
-
     /// Associated method, attempts to create a new `HomePage` struct from `data`.
     /// Returns a `Result`, the `Ok` variant if creating was successful, otherwise `Err`.
     pub fn try_create(mut data: Vec<u8>) -> Result<Self, UserError> {
@@ -97,7 +95,7 @@ impl HomePage {
             // used to ensure that we have read properly formatted data from the server
             cur_pos = cursor.position();
         }
-
+        epic_frames.sort_by_key(|frame| frame.id);
         Ok(HomePage { epic_frames })
     }
 
@@ -228,7 +226,7 @@ impl EpicDetailPage {
 
             cur_pos = cursor.position();
         }
-
+        story_frames.sort_by_key(|frame| frame.id);
         Ok(EpicDetailPage { frame, story_frames })
     }
 
@@ -777,7 +775,7 @@ mod test {
         let user_input = "q";
         let mut request_input = Cursor::new(vec![1u8, 2, 3, 4, 5]);
         // let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
-        let request = homepage.parse_request(user_input, request_input);
+        let request = homepage.parse_request(user_input, &mut request_input);
         println!("{:?}", request);
         assert!(request.is_ok());
 
@@ -787,7 +785,7 @@ mod test {
 
         let user_input = "Q";
         let mut request_input = Cursor::new(vec![1u8, 2, 3, 4, 5]);
-        let request = homepage.parse_request(user_input, request_input);
+        let request = homepage.parse_request(user_input, &mut request_input);
         println!("{:?}", request);
         assert!(request.is_ok());
 

@@ -412,10 +412,222 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-
+    use async_std::io::{Cursor, Seek, SeekFrom};
+    use async_std::task::block_on;
+    use std::io::{BufRead, BufReader, stdin};
+    use futures::AsyncSeekExt;
+    use async_jira_cli::models::prelude::*;
     #[test]
     fn test_interface_new() {
-        // let mut interface = Interface::new();
-        assert!(true);
+        // To simulate reading and writing with the interface
+        let connection_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+        let client_input = BufReader::new(stdin());
+        let interface = Interface::new(connection_stream, client_input);
+        println!("Interface created successfully");
     }
+
+    #[test]
+    fn test_interface_parse_successful_connection_response() {
+        // Set up the mock database
+        let mut db_handle = DbState::new(
+            String::default(),
+            String::default(),
+            String::default(),
+        );
+
+        db_handle.add_epic(String::from("Test Epic 1"), String::from("A good first epic for testing purposes"));
+        db_handle.add_epic(String::from("Test Epic 2"), String::from("A good second epic for testing purposes"));
+        db_handle.add_epic(String::from("Test Epic 3"), String::from("A good third epic for testing purposes"));
+        let db_bytes = db_handle.as_bytes();
+
+        // Set up mock connection stream, and client input
+        let client_input = BufReader::new(stdin());
+        let mut connection_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+
+        // Write the mock response to the connection stream
+        let connection_response = Response::ClientAddedOk(db_bytes.clone());
+
+        assert!(block_on(connection_stream.write_all(connection_response.as_bytes().as_slice())).is_ok());
+
+        // Tag buffer for reading response
+        let mut tag_buf = [0u8; 18];
+
+        assert!(block_on(connection_stream.seek(SeekFrom::Start(0))).is_ok());
+
+        // simulate reading the response from the server
+        assert!(block_on(connection_stream.read_exact(&mut tag_buf)).is_ok());
+
+        // simulate deserializing the response
+        let (type_and_flag, epic_id, story_id, data_len) = Response::decode(&tag_buf);
+
+        // Build the interface
+        let mut interface = Interface::new(connection_stream, client_input);
+
+        // Ensure response is handled correctly
+        assert!(block_on(interface.parse_successful_connection_response(data_len)).is_ok());
+    }
+
+    #[test]
+    fn test_interface_parse_add_epic_response() {
+        // Set up the mock database
+        let mut db_handle = DbState::new(
+            String::default(),
+            String::default(),
+            String::default(),
+        );
+
+        db_handle.add_epic(String::from("Test Epic 1"), String::from("A good first epic for testing purposes"));
+        db_handle.add_epic(String::from("Test Epic 2"), String::from("A good second epic for testing purposes"));
+        db_handle.add_epic(String::from("Test Epic 3"), String::from("A good third epic for testing purposes"));
+        db_handle.add_epic(String::from("Test Epic 4"), String::from("A good fourth epic for testing purposes"));
+        let last_added_id = db_handle.last_unique_id();
+        assert!(db_handle.contains_epic(last_added_id));
+
+        let db_bytes = db_handle.as_bytes();
+
+        // Set up mock connection stream, and client input
+        let client_input = BufReader::new(stdin());
+        let mut connection_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+
+        // Write the mock response to the connection stream
+        let add_epic_response = Response::AddedEpicOk(last_added_id, db_bytes);
+
+        assert!(block_on(connection_stream.write_all(add_epic_response.as_bytes().as_slice())).is_ok());
+
+        // Tag buffer for reading response
+        let mut tag_buf = [0u8; 18];
+
+        assert!(block_on(connection_stream.seek(SeekFrom::Start(0))).is_ok());
+
+        // simulate reading the response from the server
+        assert!(block_on(connection_stream.read_exact(&mut tag_buf)).is_ok());
+
+        // simulate deserializing the response
+        let (type_and_flag, epic_id, story_id, data_len) = Response::decode(&tag_buf);
+
+        // Build the interface
+        let mut interface = Interface::new(connection_stream, client_input);
+
+        // Ensure response is handled correctly
+        assert!(block_on(interface.parse_add_epic_response(epic_id, data_len)).is_ok());
+        assert_eq!(epic_id, last_added_id);
+    }
+
+    #[test]
+    fn test_interface_parse_delete_epic_response() {
+        // Set up the mock database
+        let mut db_handle = DbState::new(
+            String::default(),
+            String::default(),
+            String::default(),
+        );
+
+        db_handle.add_epic(String::from("Test Epic 1"), String::from("A good first epic for testing purposes"));
+        db_handle.add_epic(String::from("Test Epic 2"), String::from("A good second epic for testing purposes"));
+        db_handle.add_epic(String::from("Test Epic 3"), String::from("A good third epic for testing purposes"));
+        db_handle.add_epic(String::from("Test Epic 4"), String::from("A good fourth epic for testing purposes"));
+        let last_added_id = db_handle.last_unique_id();
+        assert!(db_handle.contains_epic(last_added_id));
+
+        // delete last added epic
+        assert!(db_handle.delete_epic(last_added_id).is_ok());
+
+        let db_bytes = db_handle.as_bytes();
+
+        // Set up mock connection stream, and client input
+        let client_input = BufReader::new(stdin());
+        let mut connection_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+
+        // Write the mock response to the connection stream
+        let add_epic_response = Response::DeletedEpicOk(last_added_id, db_bytes);
+
+        assert!(block_on(connection_stream.write_all(add_epic_response.as_bytes().as_slice())).is_ok());
+
+        // Tag buffer for reading response
+        let mut tag_buf = [0u8; 18];
+
+        assert!(block_on(connection_stream.seek(SeekFrom::Start(0))).is_ok());
+
+        // simulate reading the response from the server
+        assert!(block_on(connection_stream.read_exact(&mut tag_buf)).is_ok());
+
+        // simulate deserializing the response
+        let (type_and_flag, epic_id, story_id, data_len) = Response::decode(&tag_buf);
+
+        // Build the interface
+        let mut interface = Interface::new(connection_stream, client_input);
+
+        // Ensure response is handled correctly
+        assert!(block_on(interface.parse_delete_epic_response(epic_id, data_len)).is_ok());
+        assert_eq!(epic_id, last_added_id);
+    }
+
+    #[test]
+    fn test_interface_get_epic_response() {
+        use std::path::PathBuf;
+        use std::collections::HashMap;
+        // Create the mock epic with stories
+        let mut epic = Epic::new(
+            64,
+            String::from("Test Epic"),
+            String::from("A good epic for testing purposes"),
+            Status::Open,
+            PathBuf::default(),
+            HashMap::new()
+        );
+        let test_story1 = Story::new(
+            97,
+            64,
+            String::from("Test Story 1"),
+            String::from("A good first story for testing purposes"),
+            Status::Open
+        );
+        let test_story2 = Story::new(
+            98,
+            64,
+            String::from("Test Story 2"),
+            String::from("A good second story for testing purposes"),
+            Status::Open
+        );
+        let test_story3 = Story::new(
+            99,
+            64,
+            String::from("Test Story 3"),
+            String::from("A good third story for testing purposes"),
+            Status::Open
+        );
+
+        assert!(epic.add_story(test_story1).is_ok());
+        assert!(epic.add_story(test_story2).is_ok());
+        assert!(epic.add_story(test_story3).is_ok());
+
+        // Create the mock response
+        let get_epic_response = Response::GetEpicOk(epic.as_bytes());
+
+        // Set up mock connection stream, and client input
+        let client_input = BufReader::new(stdin());
+        let mut connection_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+
+        assert!(block_on(connection_stream.write_all(get_epic_response.as_bytes().as_slice())).is_ok());
+
+        let mut tag_buf = [0u8; 18];
+
+        // Move cursor position back to start
+        assert!(block_on(connection_stream.seek(SeekFrom::Start(0))).is_ok());
+
+        // Simulate reading response tag from server
+        assert!(block_on(connection_stream.read_exact(&mut tag_buf)).is_ok());
+
+        // simulate deserializing the response
+        let (type_and_flag, epic_id, story_id, data_len) = Response::decode(&tag_buf);
+
+        // Build the interface
+        let mut interface = Interface::new(connection_stream, client_input);
+
+        // Ensure response is handled correctly
+        assert!(block_on(interface.parse_get_epic_response(epic_id, data_len)).is_ok());
+        assert_eq!(epic_id, 64);
+    }
+
+
 }
