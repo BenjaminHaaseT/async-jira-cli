@@ -802,13 +802,13 @@ mod test {
         assert!(epic.get_story(99).is_some());
 
         // Create the mock response
-        let update_epic_status_response = Response::GetStoryOk(64, epic.as_bytes());
+        let get_story_response = Response::GetStoryOk(99, epic.get_story(99).unwrap().as_bytes());
 
         // Set up mock connection stream, and client input
         let client_input = BufReader::new(stdin());
         let mut connection_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
 
-        assert!(block_on(connection_stream.write_all(update_epic_status_response.as_bytes().as_slice())).is_ok());
+        assert!(block_on(connection_stream.write_all(get_story_response.as_bytes().as_slice())).is_ok());
 
         let mut tag_buf = [0u8; 18];
 
@@ -836,8 +836,8 @@ mod test {
                 story_frames: vec![]}));
 
         // Ensure response is handled correctly
-        assert!(block_on(interface.parse_update_epic_status_response(epic_id, data_len)).is_ok());
-        assert_eq!(epic_id, 64);
+        assert!(block_on(interface.parse_get_story_response(story_id, data_len)).is_ok());
+        assert_eq!(story_id, 99);
     }
 
 

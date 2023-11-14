@@ -349,7 +349,7 @@ async fn broker(
                         Some(story) => {
                             let _ = log_connection_error(
                                 client_sender
-                                    .send(Response::GetStoryOk(story.as_bytes()))
+                                    .send(Response::GetStoryOk(story_id, story.as_bytes()))
                                     .await,
                                 peer_id,
                             );
