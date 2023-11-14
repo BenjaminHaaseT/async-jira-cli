@@ -38,7 +38,7 @@ pub enum Response {
 
     /// Response for a successful retrieval of a `Story`, holds the
     /// encoded data of the story in a `Vec<u8>`
-    GetStoryOk(Vec<u8>),
+    GetStoryOk(u32, Vec<u8>),
 
     /// Response for an unsuccessful retrieval of a `Story`, holds the epic id and story id and the
     /// `Epic` encoded as a `Vec<u8>` that was queried
@@ -98,7 +98,7 @@ impl AsBytes for Response {
             Response::GetEpicOk(_,data) => bytes.extend_from_slice(data.as_slice()),
             Response::EpicStatusUpdateOk(_, data) => bytes.extend_from_slice(data.as_slice()),
             Response::EpicDoesNotExist(_, data) => bytes.extend_from_slice(data.as_slice()),
-            Response::GetStoryOk(data) => bytes.extend_from_slice(data.as_slice()),
+            Response::GetStoryOk(_, data) => bytes.extend_from_slice(data.as_slice()),
             Response::StoryDoesNotExist(_, _, data) => bytes.extend_from_slice(data.as_slice()),
             Response::AddedStoryOk(_, _, data) => bytes.extend_from_slice(data.as_slice()),
             Response::DeletedStoryOk(_, _, data) => bytes.extend_from_slice(data.as_slice()),
@@ -186,9 +186,10 @@ impl BytesEncode for Response {
                 // }
                 encoded_tag
             }
-            Response::GetStoryOk(data) => {
+            Response::GetStoryOk(story_id, data) => {
                 encoded_tag[0] ^= (1 << 7);
                 encoded_tag[1] ^= (1 << 7);
+                Response::encode_story_id(&mut encoded_tag, *story_id);
                 Response::encode_data_len(&mut encoded_tag, data);
                 encoded_tag
             }
@@ -274,13 +275,15 @@ impl BytesEncode for Response {
             || type_and_flag_bytes & (1 << 11) != 0
         {
             epic_id = parse_4_bytes(&tag[2..6]);
-            if type_and_flag_bytes & (1 << 8) != 0
-                || type_and_flag_bytes & (1 << 9) != 0
-                || type_and_flag_bytes & (1 << 10) != 0
-                || type_and_flag_bytes & (1 << 11) != 0
-            {
-                story_id = parse_4_bytes(&tag[6..10]);
-            }
+        }
+
+        if type_and_flag_bytes & (1 << 7) != 0
+            || type_and_flag_bytes & (1 << 8) != 0
+            || type_and_flag_bytes & (1 << 9) != 0
+            || type_and_flag_bytes & (1 << 10) != 0
+            || type_and_flag_bytes & (1 << 11) != 0
+        {
+            story_id = parse_4_bytes(&tag[6..10]);
         }
         if type_and_flag_bytes & (1 << 15) != 0 {
             for i in 0..8 {
@@ -333,10 +336,10 @@ mod test {
         println!("{:?}", encoding);
         assert_eq!(encoding, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
-        let response = Response::GetStoryOk(vec![1, 2, 3, 4, 5]);
+        let response = Response::GetStoryOk(4798,vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
         println!("{:?}", encoding);
-        assert_eq!(encoding, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 128, 0, 0, 0, 0, 190, 18, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
 
         let response = Response::StoryDoesNotExist(2353, 4798, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
@@ -422,12 +425,12 @@ mod test {
         assert_eq!(decoding, (32832, 2353, 0, 5));
         println!("{:016b}", decoding.0);
 
-        let response = Response::GetStoryOk(vec![1, 2, 3, 4, 5]);
+        let response = Response::GetStoryOk(4798, vec![1, 2, 3, 4, 5]);
         let encoding = response.encode();
-        assert_eq!(encoding, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encoding, [128, 128, 0, 0, 0, 0, 190, 18, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
         let decoding = Response::decode(&encoding);
         println!("{:?}", decoding);
-        assert_eq!(decoding, (32896, 0, 0, 5));
+        assert_eq!(decoding, (32896, 0, 4798, 5));
         println!("{:016b}", decoding.0);
 
         let response = Response::StoryDoesNotExist(2353, 4798, vec![1, 2, 3, 4, 5]);
@@ -509,10 +512,10 @@ mod test {
         println!("{:?}", bytes);
         assert_eq!(bytes, [128, 64, 49, 9, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4]);
 
-        let response = Response::GetStoryOk(vec![1, 2, 3]);
+        let response = Response::GetStoryOk(4798, vec![1, 2, 3]);
         let bytes = response.as_bytes();
         println!("{:?}", bytes);
-        assert_eq!(bytes, [128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+        assert_eq!(bytes, [128, 128, 0, 0, 0, 0, 190, 18, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
 
         let response = Response::StoryDoesNotExist(2353, 4798, vec![1, 2, 3]);
         let bytes = response.as_bytes();

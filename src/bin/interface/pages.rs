@@ -59,7 +59,7 @@ impl Action {
 /// Represents the first page that the user will see.
 #[derive(Debug)]
 pub struct HomePage {
-    epic_frames: Vec<EpicFrame>
+    pub epic_frames: Vec<EpicFrame>
 }
 
 impl HomePage {
@@ -181,8 +181,8 @@ impl<R: std::io::BufRead> Page<R> for HomePage {
 /// A page for displaying the details of a specific Epic.
 #[derive(Debug)]
 pub struct EpicDetailPage {
-    frame: EpicFrame,
-    story_frames: Vec<StoryFrame>,
+    pub frame: EpicFrame,
+    pub story_frames: Vec<StoryFrame>,
 }
 
 impl EpicDetailPage {
