@@ -3,10 +3,12 @@
 
 use std::io::{BufRead, BufReader, stdin};
 use std::fmt::{Debug, Display, Formatter};
+use clap::Parser;
 use async_std::{
     io::ReadExt,
     net::{TcpStream, ToSocketAddrs},
     prelude::*,
+    task::block_on,
 };
 
 mod interface;
@@ -45,6 +47,14 @@ impl Display for UserError {
 
 impl std::error::Error for UserError {}
 
+#[derive(Parser)]
+struct Cli {
+    /// The address of the server the client is connecting to
+    address: String,
+    /// Port number
+    port: u16,
+}
+
 async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), UserError> {
     println!("connecting to server {:?}...", server_addrs);
     let connection = TcpStream::connect(server_addrs.clone())
@@ -58,5 +68,9 @@ async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), Use
 }
 
 fn main() {
-
+    let cli = Cli::parse();
+    let addrs = (cli.address.as_str(), cli.port);
+    if let Err(e) = block_on(run(addrs)) {
+        eprintln!("{e}");
+    }
 }
