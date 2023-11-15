@@ -407,7 +407,7 @@ impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
 #[derive(Debug)]
 pub struct StoryDetailPage {
     /// The frame of the `Story` that the `StoryDetailPage` is representing
-    story_frame: StoryFrame,
+    pub story_frame: StoryFrame,
 }
 
 impl StoryDetailPage {

@@ -334,7 +334,7 @@ where
         println!();
 
         <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
-        assert!(!self.page_stack.is_empty());
+        assert_eq!(self.page_stack.len(), 2);
 
         while self.page_stack.len() > 1 {
             self.page_stack.pop();
@@ -356,12 +356,8 @@ where
         println!();
 
         <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
-        assert!(!self.page_stack.is_empty());
-
-        while self.page_stack.len() > 1 {
-            self.page_stack.pop();
-        }
-
+        assert_eq!(self.page_stack.len(), 2);
+        self.page_stack.pop();
         self.page_stack.push(epic_detail_page);
         Ok(())
     }
@@ -399,11 +395,8 @@ where
         println!();
 
         <StoryDetailPage as Page<R>>::print_page(&story_detail_page);
-        assert!(!self.page_stack.is_empty());
-        while self.page_stack.len() > 2 {
-            self.page_stack.pop();
-        }
-
+        assert_eq!(self.page_stack.len(),3);
+        self.page_stack.pop();
         self.page_stack.push(story_detail_page);
         Ok(())
     }
@@ -760,7 +753,7 @@ mod test {
     }
 
     #[test]
-    fn test_interface_get_story_response() {
+    fn test_interface_parse_get_story_response() {
         use std::path::PathBuf;
         use std::collections::HashMap;
         // Create the mock epic with stories
@@ -839,6 +832,360 @@ mod test {
         assert!(block_on(interface.parse_get_story_response(story_id, data_len)).is_ok());
         assert_eq!(story_id, 99);
     }
+
+    #[test]
+    fn test_interface_parse_story_does_not_exist_response() {
+        use std::path::PathBuf;
+        use std::collections::HashMap;
+        // Create the mock epic with stories
+        let mut epic = Epic::new(
+            64,
+            String::from("Test Epic"),
+            String::from("A good epic for testing purposes"),
+            Status::Open,
+            PathBuf::default(),
+            HashMap::new()
+        );
+        let test_story1 = Story::new(
+            97,
+            64,
+            String::from("Test Story 1"),
+            String::from("A good first story for testing purposes"),
+            Status::Open
+        );
+        let test_story2 = Story::new(
+            98,
+            64,
+            String::from("Test Story 2"),
+            String::from("A good second story for testing purposes"),
+            Status::Open
+        );
+        let test_story3 = Story::new(
+            99,
+            64,
+            String::from("Test Story 3"),
+            String::from("A good third story for testing purposes"),
+            Status::Open
+        );
+
+        assert!(epic.add_story(test_story1).is_ok());
+        assert!(epic.add_story(test_story2).is_ok());
+        assert!(epic.add_story(test_story3).is_ok());
+
+        // Simulate the server checking if the story exists or not...
+        assert!(epic.get_story(100).is_none());
+
+        let story_does_not_exist_response = Response::StoryDoesNotExist(64, 100, epic.as_bytes());
+
+        let client_input = BufReader::new(stdin());
+        let mut connection_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+
+        // Simulate server writing response to stream
+        assert!(block_on(connection_stream.write_all(story_does_not_exist_response.as_bytes().as_slice())).is_ok());
+
+        // Tag to simulate reading response from server
+        let mut tag_buf = [0; 18];
+
+        // Reset cursor position
+        assert!(block_on(connection_stream.seek(SeekFrom::Start(0))).is_ok());
+
+        // Read response from server
+        assert!(block_on(connection_stream.read_exact(&mut tag_buf)).is_ok());
+
+        // Deserialize the response tag
+        let (type_and_flag_bytes, epic_id, story_id, data_len) = Response::decode(&tag_buf);
+
+        // Create interface
+        let mut interface = Interface::new(connection_stream, client_input);
+
+        // Create pages to simulate real situation
+        interface.page_stack.push(Box::new(HomePage {epic_frames: vec![]}));
+        interface.page_stack.push(Box::new(
+            EpicDetailPage {
+                frame: EpicFrame {
+                    id: 64,
+                    name: String::from("Test Epic"),
+                    description: String::from("A good epic for testing purposes"),
+                    status: Status::Open
+                },
+                story_frames: vec![]}));
+
+        assert!(block_on(interface.parse_story_does_not_exist_response(story_id, data_len)).is_ok());
+        assert_eq!(story_id, 100);
+    }
+
+    #[test]
+    fn test_interface_parse_add_story_response() {
+        use std::path::PathBuf;
+        use std::collections::HashMap;
+        // Create the mock epic with stories
+        let mut epic = Epic::new(
+            64,
+            String::from("Test Epic"),
+            String::from("A good epic for testing purposes"),
+            Status::Open,
+            PathBuf::default(),
+            HashMap::new()
+        );
+        let test_story1 = Story::new(
+            97,
+            64,
+            String::from("Test Story 1"),
+            String::from("A good first story for testing purposes"),
+            Status::Open
+        );
+        let test_story2 = Story::new(
+            98,
+            64,
+            String::from("Test Story 2"),
+            String::from("A good second story for testing purposes"),
+            Status::Open
+        );
+        let test_story3 = Story::new(
+            99,
+            64,
+            String::from("Test Story 3"),
+            String::from("A good third story for testing purposes"),
+            Status::Open
+        );
+
+        assert!(epic.add_story(test_story1).is_ok());
+        assert!(epic.add_story(test_story2).is_ok());
+        assert!(epic.add_story(test_story3).is_ok());
+
+        // Simulate server adding the story to the epic...
+        let test_story4 = Story::new(
+            100,
+            64,
+            String::from("Test Story 3"),
+            String::from("A good third story for testing purposes"),
+            Status::Open
+        );
+
+        assert!(epic.add_story(test_story4).is_ok());
+
+        let  story_added_response = Response::AddedStoryOk(64, 100, epic.as_bytes());
+
+        let client_input = BufReader::new(stdin());
+        let mut connection_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+
+        // Simulate server writing response to stream
+        assert!(block_on(connection_stream.write_all(story_added_response.as_bytes().as_slice())).is_ok());
+
+        // Tag to simulate reading response from server
+        let mut tag_buf = [0; 18];
+
+        // Reset cursor position
+        assert!(block_on(connection_stream.seek(SeekFrom::Start(0))).is_ok());
+
+        // Read response from server
+        assert!(block_on(connection_stream.read_exact(&mut tag_buf)).is_ok());
+
+        // Deserialize the response tag
+        let (type_and_flag_bytes, epic_id, story_id, data_len) = Response::decode(&tag_buf);
+
+        // Create interface
+        let mut interface = Interface::new(connection_stream, client_input);
+
+        // Create pages to simulate real situation
+        interface.page_stack.push(Box::new(HomePage {epic_frames: vec![]}));
+        interface.page_stack.push(Box::new(
+            EpicDetailPage {
+                frame: EpicFrame {
+                    id: 64,
+                    name: String::from("Test Epic"),
+                    description: String::from("A good epic for testing purposes"),
+                    status: Status::Open
+                },
+                story_frames: vec![]}));
+
+        assert!(block_on(interface.parse_add_story_response(story_id, data_len)).is_ok());
+        assert_eq!(story_id, 100);
+    }
+
+    #[test]
+    fn test_interface_parse_delete_story_response() {
+        use std::path::PathBuf;
+        use std::collections::HashMap;
+        // Create the mock epic with stories
+        let mut epic = Epic::new(
+            64,
+            String::from("Test Epic"),
+            String::from("A good epic for testing purposes"),
+            Status::Open,
+            PathBuf::default(),
+            HashMap::new()
+        );
+        let test_story1 = Story::new(
+            97,
+            64,
+            String::from("Test Story 1"),
+            String::from("A good first story for testing purposes"),
+            Status::Open
+        );
+        let test_story2 = Story::new(
+            98,
+            64,
+            String::from("Test Story 2"),
+            String::from("A good second story for testing purposes"),
+            Status::Open
+        );
+        let test_story3 = Story::new(
+            99,
+            64,
+            String::from("Test Story 3"),
+            String::from("A good third story for testing purposes"),
+            Status::Open
+        );
+        let test_story4 = Story::new(
+            100,
+            64,
+            String::from("Test Story 3"),
+            String::from("A good third story for testing purposes"),
+            Status::Open
+        );
+
+        assert!(epic.add_story(test_story1).is_ok());
+        assert!(epic.add_story(test_story2).is_ok());
+        assert!(epic.add_story(test_story3).is_ok());
+        assert!(epic.add_story(test_story4).is_ok());
+
+        // Simulate server deleting story from database...
+        assert!(epic.delete_story(100).is_ok());
+
+        let  story_deleted_response = Response::DeletedStoryOk(64, 100, epic.as_bytes());
+
+        let client_input = BufReader::new(stdin());
+        let mut connection_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+
+        // Simulate server writing response to stream
+        assert!(block_on(connection_stream.write_all(story_deleted_response.as_bytes().as_slice())).is_ok());
+
+        // Tag to simulate reading response from server
+        let mut tag_buf = [0; 18];
+
+        // Reset cursor position
+        assert!(block_on(connection_stream.seek(SeekFrom::Start(0))).is_ok());
+
+        // Read response from server
+        assert!(block_on(connection_stream.read_exact(&mut tag_buf)).is_ok());
+
+        // Deserialize the response tag
+        let (type_and_flag_bytes, epic_id, story_id, data_len) = Response::decode(&tag_buf);
+
+        // Create interface
+        let mut interface = Interface::new(connection_stream, client_input);
+
+        // Create pages to simulate real situation
+        interface.page_stack.push(Box::new(HomePage {epic_frames: vec![]}));
+        interface.page_stack.push(Box::new(
+            EpicDetailPage {
+                frame: EpicFrame {
+                    id: 64,
+                    name: String::from("Test Epic"),
+                    description: String::from("A good epic for testing purposes"),
+                    status: Status::Open
+                },
+                story_frames: vec![]}));
+
+        assert!(block_on(interface.parse_delete_story_response(story_id, data_len)).is_ok());
+        assert_eq!(story_id, 100);
+    }
+
+    #[test]
+    fn test_interface_parse_update_story_status_response() {
+        use std::path::PathBuf;
+        use std::collections::HashMap;
+        // Create the mock epic with stories
+        let mut epic = Epic::new(
+            64,
+            String::from("Test Epic"),
+            String::from("A good epic for testing purposes"),
+            Status::Open,
+            PathBuf::default(),
+            HashMap::new()
+        );
+        let test_story1 = Story::new(
+            97,
+            64,
+            String::from("Test Story 1"),
+            String::from("A good first story for testing purposes"),
+            Status::Open
+        );
+        let test_story2 = Story::new(
+            98,
+            64,
+            String::from("Test Story 2"),
+            String::from("A good second story for testing purposes"),
+            Status::Open
+        );
+        let test_story3 = Story::new(
+            99,
+            64,
+            String::from("Test Story 3"),
+            String::from("A good third story for testing purposes"),
+            Status::Open
+        );
+
+        assert!(epic.add_story(test_story1).is_ok());
+        assert!(epic.add_story(test_story2).is_ok());
+        assert!(epic.add_story(test_story3).is_ok());
+
+        // Simulate updating the story's status
+        assert!(epic.update_story_status(99, Status::Resolved).is_ok());
+
+        // Create the mock response
+        let update_story_status_response = Response::StoryStatusUpdateOk(64, 99, epic.get_story(99).unwrap().as_bytes());
+
+        // Set up mock connection stream, and client input
+        let client_input = BufReader::new(stdin());
+        let mut connection_stream: Cursor<Vec<u8>> = Cursor::new(vec![]);
+
+        assert!(block_on(connection_stream.write_all(update_story_status_response.as_bytes().as_slice())).is_ok());
+
+        let mut tag_buf = [0u8; 18];
+
+        // Move cursor position back to start
+        assert!(block_on(connection_stream.seek(SeekFrom::Start(0))).is_ok());
+
+        // Simulate reading response tag from server
+        assert!(block_on(connection_stream.read_exact(&mut tag_buf)).is_ok());
+
+        // simulate deserializing the response
+        let (type_and_flag, epic_id, story_id, data_len) = Response::decode(&tag_buf);
+
+        // Build the interface
+        let mut interface = Interface::new(connection_stream, client_input);
+
+        // Create pages to simulate real situation
+        interface.page_stack.push(Box::new(HomePage {epic_frames: vec![]}));
+        interface.page_stack.push(Box::new(
+            EpicDetailPage {
+                frame: EpicFrame {
+                    id: 64,
+                    name: String::from("Test Epic"),
+                    description: String::from("A good epic for testing purposes"),
+                    status: Status::Open
+                },
+                story_frames: vec![]}));
+        interface.page_stack.push(Box::new(
+            StoryDetailPage {
+                story_frame: StoryFrame {
+                    id: 99,
+                    epic_id: 64,
+                    name: String::from("Test Story 3"),
+                    description: String::from("A good third story for testing purposes"),
+                    status: Status::Open,
+                }
+            }
+        ));
+
+        // Ensure response is handled correctly
+        assert!(block_on(interface.parse_update_story_status_response(story_id, data_len)).is_ok());
+        assert_eq!(story_id, 99);
+    }
+
+
 
 
 }
