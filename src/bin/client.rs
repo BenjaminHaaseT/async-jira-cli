@@ -1,20 +1,17 @@
 //! Implements a simple server that will send requests and receive responses from the server.
 //! Gives users an interface to interact with the server.
 
-use std::io::{BufRead, stdin};
+use std::io::{BufRead, BufReader, stdin};
+use std::fmt::{Debug, Display, Formatter};
 use async_std::{
     io::ReadExt,
     net::{TcpStream, ToSocketAddrs},
     prelude::*,
-    task,
 };
-
-use std::fmt::{Debug, Display, Formatter};
 
 mod interface;
 
 use crate::interface::prelude::*;
-use async_jira_cli::response::prelude::*;
 use async_jira_cli::utils::prelude::*;
 
 #[derive(Debug)]
@@ -49,25 +46,17 @@ impl Display for UserError {
 impl std::error::Error for UserError {}
 
 async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), UserError> {
-    println!("connecting to {:?}...", server_addrs);
-    let stream = TcpStream::connect(server_addrs.clone())
+    println!("connecting to server {:?}...", server_addrs);
+    let connection = TcpStream::connect(server_addrs.clone())
         .await
-        .map_err(|_| UserError::ServerConnection(format!("unable to connect to {:?}", server_addrs)))?;
-
-    // split into read/write halves
-    // let (reader, writer) = (&stream, &stream);
-
-    // user input reader
-    let user_input = std::io::BufReader::new(stdin());
-
-    // create the interface
-    let mut interface = Interface::new(
-        stream,
-        user_input,
-    );
-
-    // TODO: log errors
+        .map_err(
+        |_| UserError::ServerConnection(format!("unable to connect to server {:?}", server_addrs))
+    )?;
+    let client_input = BufReader::new(stdin());
+    let mut interface = Interface::new(connection, client_input);
     interface.run().await
 }
 
-fn main() {}
+fn main() {
+
+}
