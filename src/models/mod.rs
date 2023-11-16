@@ -383,7 +383,7 @@ impl Epic {
 
     /// Associated method for loading a `Epic` from `path`. The method is fallible, and so a `Result<Epic, DbError>` is returned,
     /// where the `Err` variant is the unsuccessful `load`.
-    pub fn load(path: PathBuf, max_id: &mut u32) -> Result<Epic, DbError> {
+    fn load(path: PathBuf, max_id: &mut u32) -> Result<Epic, DbError> {
         // Attempt to open the file
         let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path.clone()) {
             BufReader::new(f)

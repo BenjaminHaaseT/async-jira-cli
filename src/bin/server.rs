@@ -1,21 +1,21 @@
 //! The binary that will run the server for the asynchronous database
-
+use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::fmt::Debug;
+use std::sync::Arc;
 use async_std::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
     prelude::*,
     task,
 };
-
 use futures::channel::mpsc::{self, Receiver, SendError, Sender, UnboundedReceiver};
 use futures::select;
 use futures::sink::SinkExt;
 use futures::{FutureExt, Stream, StreamExt};
 use uuid::Uuid;
+use clap::Parser;
 
-use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::fmt::Debug;
-use std::sync::Arc;
+
 
 use async_jira_cli::events::prelude::*;
 use async_jira_cli::models::prelude::*;
@@ -535,9 +535,7 @@ async fn broker(
     Ok(())
 }
 
-fn main() {
-    todo!()
-}
+
 
 mod handlers {
     use futures::channel::mpsc::UnboundedSender;
@@ -832,4 +830,41 @@ mod handlers {
         );
         Ok(())
     }
+}
+
+#[derive(Parser)]
+struct Cli {
+    /// Absolute path to the directory where the database file is
+    #[arg(short = 'd')]
+    database_directory: String,
+
+    /// Name of the database file
+    #[arg(short = 'f')]
+    database_filename: String,
+
+    /// Name of the Epic's directory in the database directory
+    #[arg(short = 'e')]
+    epic_directory: String,
+
+    /// limiting size of the broker's channel buffer
+    #[arg(short = 'c')]
+    channel_size: usize,
+
+    /// Address the server will run on
+    #[arg(short = 'a')]
+    address: String,
+
+    /// The port for the address of the server
+    #[arg(short = 'p')]
+    port: u16
+}
+
+fn main() {
+    let cli = Cli::parse();
+    println!("{}", cli.database_directory);
+    println!("{}", cli.database_filename);
+    println!("{}", cli.epic_directory);
+    println!("{}", cli.channel_size);
+    println!("{}", cli.address);
+    println!("{}", cli.port);
 }
