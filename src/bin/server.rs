@@ -80,7 +80,7 @@ async fn accept_loop(
 
     while let Some(stream_res) = listener.incoming().next().await {
         let stream = stream_res
-            .map_err(|_e| DbError::ConnectionError(format!("unable to accept stream")))?;
+            .map_err(|_e| DbError::ConnectionError(String::from("unable accept incoming client stream")))?;
         let _ = spawn_and_log_errors(connection_loop(stream, broker_sender.clone()));
     }
     // Drop the broker's sender
@@ -217,30 +217,31 @@ async fn broker(
                 stream,
                 shutdown,
             } => {
-                if !clients.contains_key(&peer_id) {
-                    let (mut client_sender, mut client_receiver) =
-                        mpsc::channel::<Response>(channel_buf_size);
-                    clients.insert(peer_id, client_sender.clone());
-                    let mut disconnect_sender = disconnect_sender.clone();
-                    let _ = spawn_and_log_errors(async move {
-                        let res =
-                            connection_write_loop(stream, &mut client_receiver, shutdown, peer_id)
-                                .await;
-                        let _ = disconnect_sender.send((peer_id, client_receiver)).await;
-                        res
-                    });
-                    let _ = log_connection_error(
-                        client_sender
-                            .send(Response::ClientAddedOk(db_handle.as_bytes()))
-                            .await,
-                        peer_id,
-                    );
-                } else {
-                    let mut client_sender = clients.get_mut(&peer_id).unwrap();
-                    let _ = log_connection_error(client_sender.send(Response::ClientAlreadyExists).await, peer_id);
-                    // TODO: Log errors, instead of writing to stderr
-                    eprintln!("error: client already exists");
-                }
+                // if !clients.contains_key(&peer_id) {
+                //     let (mut client_sender, mut client_receiver) =
+                //         mpsc::channel::<Response>(channel_buf_size);
+                //     clients.insert(peer_id, client_sender.clone());
+                //     let mut disconnect_sender = disconnect_sender.clone();
+                //     let _ = spawn_and_log_errors(async move {
+                //         let res =
+                //             connection_write_loop(stream, &mut client_receiver, shutdown, peer_id)
+                //                 .await;
+                //         let _ = disconnect_sender.send((peer_id, client_receiver)).await;
+                //         res
+                //     });
+                //     let _ = log_connection_error(
+                //         client_sender
+                //             .send(Response::ClientAddedOk(db_handle.as_bytes()))
+                //             .await,
+                //         peer_id,
+                //     );
+                // } else {
+                //     let mut client_sender = clients.get_mut(&peer_id).unwrap();
+                //     let _ = log_connection_error(client_sender.send(Response::ClientAlreadyExists).await, peer_id);
+                //     // TODO: Log errors, instead of writing to stderr
+                //     eprintln!("error: client already exists");
+                // }
+                handlers::handle_new_client(peer_id, stream, shutdown, &mut clients, &disconnect_sender, channel_buf_size, &mut db_handle).await?;
             }
             // Adds an epic to the db_handle, and writes it to the database
             Event::AddEpic {
@@ -248,65 +249,68 @@ async fn broker(
                 epic_name,
                 epic_description,
             } => {
-                let epic_id = db_handle.add_epic(epic_name, epic_description);
-                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                // Send response to client
-                let _ = log_connection_error(
-                    client_sender
-                        .send(Response::AddedEpicOk(epic_id, db_handle.as_bytes()))
-                        .await,
-                    peer_id,
-                );
-                // Ensure changes persist in database
-                db_handle.write_async().await?;
+                // let epic_id = db_handle.add_epic(epic_name, epic_description);
+                // let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // // Send response to client
+                // let _ = log_connection_error(
+                //     client_sender
+                //         .send(Response::AddedEpicOk(epic_id, db_handle.as_bytes()))
+                //         .await,
+                //     peer_id,
+                // );
+                // // Ensure changes persist in database
+                // db_handle.write_async().await?;
+                handlers::add_epic_handler(peer_id, epic_name, epic_description, &mut clients, &mut db_handle).await?;
             }
             // Deletes an epic from the db_handle, writes changes to the database
             Event::DeleteEpic { peer_id, epic_id } => {
-                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                // Ensure epic_id is a valid epic
-                match db_handle.delete_epic(epic_id) {
-                    // We have successfully removed the epic
-                    Ok(_epic) => {
-                        let _ = log_connection_error(
-                            client_sender
-                                .send(Response::DeletedEpicOk(epic_id, db_handle.as_bytes()))
-                                .await,
-                            peer_id,
-                        );
-                        // Ensure changes persist in the database
-                        db_handle.write_async().await?;
-                    }
-                    // The epic does not exist, send reply back to client
-                    Err(_e) => {
-                        let _ = log_connection_error(
-                            client_sender
-                                .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
-                                .await,
-                            peer_id,
-                        );
-                    }
-                }
+                // let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // // Ensure epic_id is a valid epic
+                // match db_handle.delete_epic(epic_id) {
+                //     // We have successfully removed the epic
+                //     Ok(_epic) => {
+                //         let _ = log_connection_error(
+                //             client_sender
+                //                 .send(Response::DeletedEpicOk(epic_id, db_handle.as_bytes()))
+                //                 .await,
+                //             peer_id,
+                //         );
+                //         // Ensure changes persist in the database
+                //         db_handle.write_async().await?;
+                //     }
+                //     // The epic does not exist, send reply back to client
+                //     Err(_e) => {
+                //         let _ = log_connection_error(
+                //             client_sender
+                //                 .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                //                 .await,
+                //             peer_id,
+                //         );
+                //     }
+                // }
+                handlers::delete_epic_handler(peer_id, epic_id, &mut clients, &mut db_handle).await?;
             }
             // Gets an epics information from the database
             Event::GetEpic { peer_id, epic_id } => {
-                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                match db_handle.get_epic(epic_id) {
-                    Some(epic) => {
-                        let epic_bytes = epic.as_bytes();
-                        let _ = log_connection_error(
-                            client_sender.send(Response::GetEpicOk(epic_id,epic_bytes)).await,
-                            peer_id,
-                        );
-                    }
-                    None => {
-                        let _ = log_connection_error(
-                            client_sender
-                                .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
-                                .await,
-                            peer_id,
-                        );
-                    }
-                }
+                // let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // match db_handle.get_epic(epic_id) {
+                //     Some(epic) => {
+                //         let epic_bytes = epic.as_bytes();
+                //         let _ = log_connection_error(
+                //             client_sender.send(Response::GetEpicOk(epic_id,epic_bytes)).await,
+                //             peer_id,
+                //         );
+                //     }
+                //     None => {
+                //         let _ = log_connection_error(
+                //             client_sender
+                //                 .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                //                 .await,
+                //             peer_id,
+                //         );
+                //     }
+                // }
+                handlers::get_epic_handler(peer_id, epic_id, &mut clients, &mut db_handle).await?;
             }
             // Update the status of an epic in the database
             Event::UpdateEpicStatus {
@@ -314,28 +318,29 @@ async fn broker(
                 epic_id,
                 status,
             } => {
-                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                if let Some(epic) = db_handle.get_epic_mut(epic_id) {
-                    epic.update_status(status);
-                    // Send response that status was updated successfully
-                    let _ = log_connection_error(
-                        client_sender
-                            .send(Response::EpicStatusUpdateOk(epic_id, epic.as_bytes()))
-                            .await,
-                        peer_id,
-                    );
-                    epic.write_async().await?;
-                    // task::spawn_blocking(|| {
-                    //     epic.write()
-                    // }).await?;
-                } else {
-                    let _ = log_connection_error(
-                        client_sender
-                            .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
-                            .await,
-                        peer_id,
-                    );
-                }
+                // let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // if let Some(epic) = db_handle.get_epic_mut(epic_id) {
+                //     epic.update_status(status);
+                //     // Send response that status was updated successfully
+                //     let _ = log_connection_error(
+                //         client_sender
+                //             .send(Response::EpicStatusUpdateOk(epic_id, epic.as_bytes()))
+                //             .await,
+                //         peer_id,
+                //     );
+                //     epic.write_async().await?;
+                //     // task::spawn_blocking(|| {
+                //     //     epic.write()
+                //     // }).await?;
+                // } else {
+                //     let _ = log_connection_error(
+                //         client_sender
+                //             .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                //             .await,
+                //         peer_id,
+                //     );
+                // }
+                handlers::update_epic_status_handler(peer_id, epic_id, status, &mut clients, &mut db_handle).await?;
             }
             // Gets a story from the database
             Event::GetStory {
@@ -343,38 +348,39 @@ async fn broker(
                 epic_id,
                 story_id,
             } => {
-                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                if let Some(epic) = db_handle.get_epic(epic_id) {
-                    match epic.get_story(story_id) {
-                        Some(story) => {
-                            let _ = log_connection_error(
-                                client_sender
-                                    .send(Response::GetStoryOk(story_id, story.as_bytes()))
-                                    .await,
-                                peer_id,
-                            );
-                        }
-                        None => {
-                            let _ = log_connection_error(
-                                client_sender
-                                    .send(Response::StoryDoesNotExist(
-                                        epic_id,
-                                        story_id,
-                                        epic.as_bytes(),
-                                    ))
-                                    .await,
-                                peer_id,
-                            );
-                        }
-                    }
-                } else {
-                    let _ = log_connection_error(
-                        client_sender
-                            .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
-                            .await,
-                        peer_id,
-                    );
-                }
+                // let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // if let Some(epic) = db_handle.get_epic(epic_id) {
+                //     match epic.get_story(story_id) {
+                //         Some(story) => {
+                //             let _ = log_connection_error(
+                //                 client_sender
+                //                     .send(Response::GetStoryOk(story_id, story.as_bytes()))
+                //                     .await,
+                //                 peer_id,
+                //             );
+                //         }
+                //         None => {
+                //             let _ = log_connection_error(
+                //                 client_sender
+                //                     .send(Response::StoryDoesNotExist(
+                //                         epic_id,
+                //                         story_id,
+                //                         epic.as_bytes(),
+                //                     ))
+                //                     .await,
+                //                 peer_id,
+                //             );
+                //         }
+                //     }
+                // } else {
+                //     let _ = log_connection_error(
+                //         client_sender
+                //             .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                //             .await,
+                //         peer_id,
+                //     );
+                // }
+                handlers::get_story_handler(peer_id, epic_id, story_id, &mut clients, &mut db_handle).await?;
             }
             // Adds a story to the the current epic, writes changes to the epic's file
             Event::AddStory {
@@ -383,38 +389,39 @@ async fn broker(
                 story_name,
                 story_description,
             } => {
-                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                match db_handle
-                    .add_story_async(epic_id, story_name, story_description)
-                    .await
-                {
-                    Ok(story_id) => {
-                        let _ = log_connection_error(
-                            client_sender
-                                .send(Response::AddedStoryOk(
-                                    epic_id,
-                                    story_id,
-                                    db_handle.get_epic(epic_id).unwrap().as_bytes(),
-                                ))
-                                .await,
-                            peer_id,
-                        );
-                        // Write new story to database
-                        db_handle
-                            .get_epic_mut(epic_id)
-                            .unwrap()
-                            .write_async()
-                            .await?;
-                    }
-                    Err(e) => {
-                        let _ = log_connection_error(
-                            client_sender
-                                .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
-                                .await,
-                            peer_id,
-                        );
-                    }
-                }
+                // let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // match db_handle
+                //     .add_story_async(epic_id, story_name, story_description)
+                //     .await
+                // {
+                //     Ok(story_id) => {
+                //         let _ = log_connection_error(
+                //             client_sender
+                //                 .send(Response::AddedStoryOk(
+                //                     epic_id,
+                //                     story_id,
+                //                     db_handle.get_epic(epic_id).unwrap().as_bytes(),
+                //                 ))
+                //                 .await,
+                //             peer_id,
+                //         );
+                //         // Write new story to database
+                //         db_handle
+                //             .get_epic_mut(epic_id)
+                //             .unwrap()
+                //             .write_async()
+                //             .await?;
+                //     }
+                //     Err(e) => {
+                //         let _ = log_connection_error(
+                //             client_sender
+                //                 .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                //                 .await,
+                //             peer_id,
+                //         );
+                //     }
+                // }
+                handlers::add_story_handler(peer_id, epic_id, story_name, story_description, &mut clients, &mut db_handle).await?;
             }
             // Deletes a story from the current epic, writes changes to the epic's file
             Event::DeleteStory {
@@ -422,44 +429,45 @@ async fn broker(
                 epic_id,
                 story_id,
             } => {
-                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                if let Some(epic) = db_handle.get_epic_mut(epic_id) {
-                    match epic.delete_story(story_id) {
-                        Ok(_) => {
-                            let _ = log_connection_error(
-                                client_sender
-                                    .send(Response::DeletedStoryOk(
-                                        epic_id,
-                                        story_id,
-                                        epic.as_bytes(),
-                                    ))
-                                    .await,
-                                peer_id,
-                            );
-                            // Write changes to database
-                            epic.write_async().await?;
-                        }
-                        Err(_) => {
-                            let _ = log_connection_error(
-                                client_sender
-                                    .send(Response::StoryDoesNotExist(
-                                        epic_id,
-                                        story_id,
-                                        epic.as_bytes(),
-                                    ))
-                                    .await,
-                                peer_id,
-                            );
-                        }
-                    }
-                } else {
-                    let _ = log_connection_error(
-                        client_sender
-                            .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
-                            .await,
-                        peer_id,
-                    );
-                }
+                // let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // if let Some(epic) = db_handle.get_epic_mut(epic_id) {
+                //     match epic.delete_story(story_id) {
+                //         Ok(_) => {
+                //             let _ = log_connection_error(
+                //                 client_sender
+                //                     .send(Response::DeletedStoryOk(
+                //                         epic_id,
+                //                         story_id,
+                //                         epic.as_bytes(),
+                //                     ))
+                //                     .await,
+                //                 peer_id,
+                //             );
+                //             // Write changes to database
+                //             epic.write_async().await?;
+                //         }
+                //         Err(_) => {
+                //             let _ = log_connection_error(
+                //                 client_sender
+                //                     .send(Response::StoryDoesNotExist(
+                //                         epic_id,
+                //                         story_id,
+                //                         epic.as_bytes(),
+                //                     ))
+                //                     .await,
+                //                 peer_id,
+                //             );
+                //         }
+                //     }
+                // } else {
+                //     let _ = log_connection_error(
+                //         client_sender
+                //             .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                //             .await,
+                //         peer_id,
+                //     );
+                // }
+                handlers::delete_story_handler(peer_id, epic_id, story_id, &mut clients, &mut db_handle).await?;
             }
             // Updates the status of a story, writes changes to the epic's file
             Event::UpdateStoryStatus {
@@ -468,52 +476,54 @@ async fn broker(
                 story_id,
                 status,
             } => {
-                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                if let Some(epic) = db_handle.get_epic_mut(epic_id) {
-                    match epic.update_story_status(story_id, status) {
-                        Ok(_) => {
-                            let _ = log_connection_error(
-                                client_sender
-                                    .send(Response::StoryStatusUpdateOk(
-                                        epic_id,
-                                        story_id,
-                                        epic.get_story(story_id).unwrap().as_bytes(),
-                                    ))
-                                    .await,
-                                peer_id,
-                            );
-                            // Write changes to database
-                            epic.write_async().await?;
-                        }
-                        Err(_) => {
-                            let _ = log_connection_error(
-                                client_sender
-                                    .send(Response::StoryDoesNotExist(
-                                        epic_id,
-                                        story_id,
-                                        epic.as_bytes(),
-                                    ))
-                                    .await,
-                                peer_id,
-                            );
-                        }
-                    }
-                } else {
-                    let _ = log_connection_error(
-                        client_sender
-                            .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
-                            .await,
-                        peer_id,
-                    );
-                }
+                // let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // if let Some(epic) = db_handle.get_epic_mut(epic_id) {
+                //     match epic.update_story_status(story_id, status) {
+                //         Ok(_) => {
+                //             let _ = log_connection_error(
+                //                 client_sender
+                //                     .send(Response::StoryStatusUpdateOk(
+                //                         epic_id,
+                //                         story_id,
+                //                         epic.get_story(story_id).unwrap().as_bytes(),
+                //                     ))
+                //                     .await,
+                //                 peer_id,
+                //             );
+                //             // Write changes to database
+                //             epic.write_async().await?;
+                //         }
+                //         Err(_) => {
+                //             let _ = log_connection_error(
+                //                 client_sender
+                //                     .send(Response::StoryDoesNotExist(
+                //                         epic_id,
+                //                         story_id,
+                //                         epic.as_bytes(),
+                //                     ))
+                //                     .await,
+                //                 peer_id,
+                //             );
+                //         }
+                //     }
+                // } else {
+                //     let _ = log_connection_error(
+                //         client_sender
+                //             .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                //             .await,
+                //         peer_id,
+                //     );
+                // }
+                handlers::update_story_status(peer_id, epic_id, story_id, status, &mut clients, &mut db_handle).await?;
             }
             // The event was unable to be parsed, send a response informing the client
             Event::UnparseableEvent { peer_id } => {
-                let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
-                let _ = log_connection_error(
-                    client_sender.send(Response::RequestNotParsed).await,
-                    peer_id,
-                );
+                // let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+                // let _ = log_connection_error(
+                //     client_sender.send(Response::RequestNotParsed).await,
+                //     peer_id,
+                // );
+                handlers::unparseable_event_handler(peer_id, &mut clients).await?;
             }
         }
     }
@@ -527,4 +537,301 @@ async fn broker(
 
 fn main() {
     todo!()
+}
+
+mod handlers {
+    use futures::channel::mpsc::UnboundedSender;
+    use super::*;
+    pub async fn handle_new_client(
+        peer_id: Uuid,
+        stream: Arc<TcpStream>,
+        shutdown: UnboundedReceiver<Void>,
+        clients: &mut HashMap<Uuid, Sender<Response>>,
+        disconnect_sender: &UnboundedSender<(Uuid, Receiver<Response>)>,
+        channel_buf_size: usize,
+        db_handle: &mut DbState,
+    ) -> Result<(), DbError> {
+        if !clients.contains_key(&peer_id) {
+            let (mut client_sender, mut client_receiver) =
+                mpsc::channel::<Response>(channel_buf_size);
+            clients.insert(peer_id, client_sender.clone());
+            let mut disconnect_sender = disconnect_sender.clone();
+            let _ = spawn_and_log_errors(async move {
+                let res =
+                    connection_write_loop(stream, &mut client_receiver, shutdown, peer_id)
+                        .await;
+                let _ = disconnect_sender.send((peer_id, client_receiver)).await;
+                res
+            });
+            let _ = log_connection_error(
+                client_sender
+                    .send(Response::ClientAddedOk(db_handle.as_bytes()))
+                    .await,
+                peer_id,
+            );
+        } else {
+            let mut client_sender = clients.get_mut(&peer_id).unwrap();
+            let _ = log_connection_error(client_sender.send(Response::ClientAlreadyExists).await, peer_id);
+            // TODO: Log errors, instead of writing to stderr
+            eprintln!("error: client already exists");
+        }
+        Ok(())
+    }
+
+    pub async fn add_epic_handler(peer_id: Uuid, epic_name: String, epic_description: String, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
+        let epic_id = db_handle.add_epic(epic_name, epic_description);
+        let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+        // Send response to client
+        let _ = log_connection_error(
+            client_sender
+                .send(Response::AddedEpicOk(epic_id, db_handle.as_bytes()))
+                .await,
+            peer_id,
+        );
+        // Ensure changes persist in database
+        db_handle.write_async().await
+    }
+
+    pub async fn delete_epic_handler(peer_id: Uuid, epic_id: u32, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
+        let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+        // Ensure epic_id is a valid epic
+        match db_handle.delete_epic(epic_id) {
+            // We have successfully removed the epic
+            Ok(_epic) => {
+                let _ = log_connection_error(
+                    client_sender
+                        .send(Response::DeletedEpicOk(epic_id, db_handle.as_bytes()))
+                        .await,
+                    peer_id,
+                );
+                // Ensure changes persist in the database
+                db_handle.write_async().await?;
+            }
+            // The epic does not exist, send reply back to client
+            Err(_e) => {
+                let _ = log_connection_error(
+                    client_sender
+                        .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                        .await,
+                    peer_id,
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn get_epic_handler(peer_id: Uuid, epic_id: u32, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
+        let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+        match db_handle.get_epic(epic_id) {
+            Some(epic) => {
+                let epic_bytes = epic.as_bytes();
+                let _ = log_connection_error(
+                    client_sender.send(Response::GetEpicOk(epic_id,epic_bytes)).await,
+                    peer_id,
+                );
+            }
+            None => {
+                let _ = log_connection_error(
+                    client_sender
+                        .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                        .await,
+                    peer_id,
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn update_epic_status_handler(peer_id: Uuid, epic_id: u32, status: Status, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
+        let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+        if let Some(epic) = db_handle.get_epic_mut(epic_id) {
+            epic.update_status(status);
+            // Send response that status was updated successfully
+            let _ = log_connection_error(
+                client_sender
+                    .send(Response::EpicStatusUpdateOk(epic_id, epic.as_bytes()))
+                    .await,
+                peer_id,
+            );
+            epic.write_async().await?;
+            // task::spawn_blocking(|| {
+            //     epic.write()
+            // }).await?;
+        } else {
+            let _ = log_connection_error(
+                client_sender
+                    .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                    .await,
+                peer_id,
+            );
+        }
+        Ok(())
+    }
+
+    pub async fn get_story_handler(peer_id: Uuid, epic_id: u32, story_id: u32, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
+        let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+        if let Some(epic) = db_handle.get_epic(epic_id) {
+            match epic.get_story(story_id) {
+                Some(story) => {
+                    let _ = log_connection_error(
+                        client_sender
+                            .send(Response::GetStoryOk(story_id, story.as_bytes()))
+                            .await,
+                        peer_id,
+                    );
+                }
+                None => {
+                    let _ = log_connection_error(
+                        client_sender
+                            .send(Response::StoryDoesNotExist(
+                                epic_id,
+                                story_id,
+                                epic.as_bytes(),
+                            ))
+                            .await,
+                        peer_id,
+                    );
+                }
+            }
+        } else {
+            let _ = log_connection_error(
+                client_sender
+                    .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                    .await,
+                peer_id,
+            );
+        }
+        Ok(())
+    }
+
+    pub async fn add_story_handler(peer_id: Uuid, epic_id: u32, story_name: String, story_description: String, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
+        let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+        match db_handle
+            .add_story_async(epic_id, story_name, story_description)
+            .await
+        {
+            Ok(story_id) => {
+                let _ = log_connection_error(
+                    client_sender
+                        .send(Response::AddedStoryOk(
+                            epic_id,
+                            story_id,
+                            db_handle.get_epic(epic_id).unwrap().as_bytes(),
+                        ))
+                        .await,
+                    peer_id,
+                );
+                // Write new story to database
+                db_handle
+                    .get_epic_mut(epic_id)
+                    .unwrap()
+                    .write_async()
+                    .await?;
+            }
+            Err(e) => {
+                let _ = log_connection_error(
+                    client_sender
+                        .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                        .await,
+                    peer_id,
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn delete_story_handler(peer_id: Uuid, epic_id: u32, story_id: u32, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
+        let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+        if let Some(epic) = db_handle.get_epic_mut(epic_id) {
+            match epic.delete_story(story_id) {
+                Ok(_) => {
+                    let _ = log_connection_error(
+                        client_sender
+                            .send(Response::DeletedStoryOk(
+                                epic_id,
+                                story_id,
+                                epic.as_bytes(),
+                            ))
+                            .await,
+                        peer_id,
+                    );
+                    // Write changes to database
+                    epic.write_async().await?;
+                }
+                Err(_) => {
+                    let _ = log_connection_error(
+                        client_sender
+                            .send(Response::StoryDoesNotExist(
+                                epic_id,
+                                story_id,
+                                epic.as_bytes(),
+                            ))
+                            .await,
+                        peer_id,
+                    );
+                }
+            }
+        } else {
+            let _ = log_connection_error(
+                client_sender
+                    .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                    .await,
+                peer_id,
+            );
+        }
+        Ok(())
+    }
+
+    pub async fn update_story_status(peer_id: Uuid, epic_id: u32, story_id: u32, status: Status, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
+        let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+        if let Some(epic) = db_handle.get_epic_mut(epic_id) {
+            match epic.update_story_status(story_id, status) {
+                Ok(_) => {
+                    let _ = log_connection_error(
+                        client_sender
+                            .send(Response::StoryStatusUpdateOk(
+                                epic_id,
+                                story_id,
+                                epic.get_story(story_id).unwrap().as_bytes(),
+                            ))
+                            .await,
+                        peer_id,
+                    );
+                    // Write changes to database
+                    epic.write_async().await?;
+                }
+                Err(_) => {
+                    let _ = log_connection_error(
+                        client_sender
+                            .send(Response::StoryDoesNotExist(
+                                epic_id,
+                                story_id,
+                                epic.as_bytes(),
+                            ))
+                            .await,
+                        peer_id,
+                    );
+                }
+            }
+        } else {
+            let _ = log_connection_error(
+                client_sender
+                    .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
+                    .await,
+                peer_id,
+            );
+        }
+        Ok(())
+    }
+
+    pub async fn unparseable_event_handler(peer_id: Uuid, clients: &mut HashMap<Uuid, Sender<Response>>) -> Result<(), DbError> {
+        let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
+        let _ = log_connection_error(
+            client_sender.send(Response::RequestNotParsed).await,
+            peer_id,
+        );
+        Ok(())
+    }
+
+
 }
