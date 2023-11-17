@@ -4,15 +4,17 @@
 //! on the database.
 
 use std::collections::HashMap;
-use std::fs::OpenOptions;
+use std::fs::OpenOptions as StdOpenOptions;
 use std::path::{Path, PathBuf};
 
 use async_std::prelude::*;
+use async_std::fs::OpenOptions;
+use async_std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Seek, Write};
 use std::cmp::PartialEq;
 use std::convert::{AsRef, Into, TryFrom};
 use std::error::Error;
 use std::fmt::Formatter;
-use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Seek, Write};
+use std::io::{BufRead as StdBufRead, BufReader as StdBufReader, BufWriter as StdBufWriter, ErrorKind as StdErrorKind, Read as StdRead, Seek as StdSeek, Write as StdWrite};
 
 use crate::utils::{AsBytes, BytesEncode, TagDecoding, TagEncoding};
 
@@ -59,7 +61,7 @@ impl DbState {
     }
 
     /// Associated method for loading data already saved into a new `DbState`.
-    pub fn load(
+    pub async fn load(
         db_dir: String,
         db_file_name: String,
         epic_dir: String,
@@ -69,7 +71,7 @@ impl DbState {
         root_path.push(db_file_name.clone());
 
         // Load file
-        let mut file = if let Ok(f) = OpenOptions::new().read(true).open(root_path.clone()) {
+        let mut file = if let Ok(f) = OpenOptions::new().read(true).open(root_path.clone()).await {
             BufReader::new(f)
         } else {
             return Err(DbError::FileLoadError(format!(
@@ -84,7 +86,7 @@ impl DbState {
 
         let db_file_name_clone = db_file_name.clone();
 
-        while let Some(line) = lines.next() {
+        while let Some(line) = lines.next().await {
             let line = line.map_err(|_| {
                 DbError::FileReadError(format!(
                     "unable to read line from file: {}",
@@ -92,7 +94,7 @@ impl DbState {
                 ))
             })?;
             let (epic_id, epic_file_path) = DbState::parse_db_line(line)?;
-            let epic = Epic::load(epic_file_path, &mut max_id)?;
+            let epic = Epic::load(epic_file_path, &mut max_id).await?;
             epics.insert(epic_id, epic);
         }
 
@@ -111,13 +113,13 @@ impl DbState {
     /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
     pub fn write(&self) -> Result<(), DbError> {
-        let mut writer = if let Ok(f) = OpenOptions::new()
+        let mut writer = if let Ok(f) = StdOpenOptions::new()
             .write(true)
             .truncate(true)
             .create(true)
             .open(&self.file_path)
         {
-            BufWriter::new(f)
+            std::io::BufWriter::new(f)
         } else {
             return Err(DbError::FileLoadError(format!(
                 "unable to open/create associated file: {:?}",
@@ -383,9 +385,9 @@ impl Epic {
 
     /// Associated method for loading a `Epic` from `path`. The method is fallible, and so a `Result<Epic, DbError>` is returned,
     /// where the `Err` variant is the unsuccessful `load`.
-    fn load(path: PathBuf, max_id: &mut u32) -> Result<Epic, DbError> {
+    async fn load(path: PathBuf, max_id: &mut u32) -> Result<Epic, DbError> {
         // Attempt to open the file
-        let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path.clone()) {
+        let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path.clone()).await {
             BufReader::new(f)
         } else {
             return Err(DbError::FileLoadError(format!(
@@ -396,7 +398,7 @@ impl Epic {
 
         // Read the bytes for the epic tag
         let mut epic_tag = [0_u8; 13];
-        file.read_exact(&mut epic_tag).map_err(|_e| {
+        file.read_exact(&mut epic_tag).await.map_err(|_e| {
             DbError::FileReadError(format!("unable to read file {:?}", path.to_str()))
         })?;
 
@@ -410,6 +412,7 @@ impl Epic {
 
         // Read the bytes from the file
         file.read_exact(epic_name_bytes.as_mut_slice())
+            .await
             .map_err(|_e| {
                 DbError::FileReadError(format!(
                     "unable to read epic: {id} name from file {:?}",
@@ -417,6 +420,7 @@ impl Epic {
                 ))
             })?;
         file.read_exact(epic_description_bytes.as_mut_slice())
+            .await
             .map_err(|_e| {
                 DbError::FileReadError(format!(
                     "unable to read epic: {id} description from file {:?}",
@@ -442,7 +446,7 @@ impl Epic {
         loop {
             // Match for any errors when reading the tag from the file
             // eof error needs to trigger break from the loop, all other others need to be propagated
-            if let Err(e) = file.read_exact(&mut cur_story_tag) {
+            if let Err(e) = file.read_exact(&mut cur_story_tag).await {
                 match e.kind() {
                     ErrorKind::UnexpectedEof => break,
                     _ => {
@@ -461,11 +465,13 @@ impl Epic {
             let mut story_description_bytes = vec![0_u8; story_description_len as usize];
 
             file.read_exact(story_name_bytes.as_mut_slice())
+                .await
                 .map_err(|_e| {
                     DbError::FileReadError(format!("unable to read story: {id} name from file"))
                 })?;
 
             file.read_exact(story_description_bytes.as_mut_slice())
+                .await
                 .map_err(|_e| {
                     DbError::FileReadError(format!(
                         "unable to read story: {id} description from file"
@@ -502,13 +508,13 @@ impl Epic {
     /// file does not exist.
     pub fn write(&self) -> Result<(), DbError> {
         // Attempt to open file
-        let mut writer = if let Ok(f) = OpenOptions::new()
+        let mut writer = if let Ok(f) = StdOpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .open::<&Path>(self.file_path.as_ref())
         {
-            BufWriter::new(f)
+            std::io::BufWriter::new(f)
         } else {
             return Err(DbError::FileLoadError(format!(
                 "unable to open file: {:?}",

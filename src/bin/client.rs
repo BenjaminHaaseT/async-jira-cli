@@ -68,8 +68,8 @@ async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), Use
 }
 
 fn main() {
-    let cli = Cli::parse();
-    let addrs = (cli.address.as_str(), cli.port);
+    // let cli = Cli::parse();
+    let addrs = ("127.0.0.1", 8080);
     if let Err(e) = block_on(run(addrs)) {
         eprintln!("{e}");
     }

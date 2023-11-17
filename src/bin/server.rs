@@ -14,7 +14,7 @@ use futures::sink::SinkExt;
 use futures::{FutureExt, Stream, StreamExt};
 use uuid::Uuid;
 use clap::Parser;
-
+use futures::stream::FusedStream;
 
 
 use async_jira_cli::events::prelude::*;
@@ -62,7 +62,7 @@ async fn accept_loop(
     epic_dir: String,
 ) -> Result<(), DbError> {
     // Connect to the servers socket address
-    println!("connecting to {:?}...", addrs);
+    println!("listening at {:?}...", addrs);
     let addrs_clone = addrs.clone();
     let listener = TcpListener::bind(addrs).await.map_err(|_e| {
         DbError::ConnectionError(format!("could not connect to {:?}", addrs_clone))
@@ -79,9 +79,16 @@ async fn accept_loop(
     ));
 
     while let Some(stream_res) = listener.incoming().next().await {
+        println!("accepting: {:?}", stream_res);
         let stream = stream_res
             .map_err(|_e| DbError::ConnectionError(String::from("unable accept incoming client stream")))?;
-        let _ = spawn_and_log_errors(connection_loop(stream, broker_sender.clone()));
+        // let f = spawn_and_log_errors(connection_loop(stream, broker_sender.clone()));
+        let broker_sender_clone = broker_sender.clone();
+        task::spawn(async move {
+            if let Err(e) = connection_loop(stream, broker_sender_clone).await {
+                eprintln!("{e}");
+            }
+        });
     }
     // Drop the broker's sender
     drop(broker_sender);
@@ -99,6 +106,7 @@ async fn connection_loop(
     client_stream: TcpStream,
     mut broker_sender: Sender<Event>,
 ) -> Result<(), DbError> {
+    println!("Inside connection loop");
     let client_stream = Arc::new(client_stream);
     let mut client_stream_reader = &*client_stream;
 
@@ -113,6 +121,7 @@ async fn connection_loop(
         stream: client_stream.clone(),
         shutdown: shutdown_receiver,
     };
+    println!("{}", broker_sender.is_closed());
     broker_sender.send(new_client).await.unwrap();
 
     let mut tag = [0u8; 13];
@@ -120,6 +129,7 @@ async fn connection_loop(
     while let Ok(_) = client_stream_reader.read_exact(&mut tag).await {
         match Event::try_create(client_id.clone(), &tag, client_stream_reader).await {
             Ok(event) => {
+                println!("sent broker event");
                 broker_sender.send(event).await.unwrap();
             }
             // We were unable to parse a valid event from the clients stream,
@@ -145,6 +155,7 @@ async fn connection_write_loop(
     client_shutdown: UnboundedReceiver<Void>,
     peer_id: Uuid,
 ) -> Result<(), DbError> {
+    println!("inside connection write loop");
     let mut stream = &*stream;
     let mut client_receiver = client_receiver.fuse();
     let mut client_shutdown = client_shutdown.fuse();
@@ -177,17 +188,21 @@ async fn broker(
     epic_dir: String,
     channel_buf_size: usize,
 ) -> Result<(), DbError> {
+    println!("Inside broker task");
+
     // For reaping disconnected peers
     let (disconnect_sender, disconnect_receiver) = mpsc::unbounded::<(Uuid, Receiver<Response>)>();
 
     // For managing the state of the database
-    let mut db_handle = DbState::load(db_dir, db_file_name, epic_dir)?;
+    let mut db_handle = DbState::load(db_dir, db_file_name, epic_dir).await?;
 
     // Holds clients currently connected to the server
     let mut clients: HashMap<Uuid, Sender<Response>> = HashMap::new();
 
     let mut events = receiver.fuse();
     let mut disconnect_receiver = disconnect_receiver.fuse();
+    println!("{}", events.is_done());
+    println!("{}", events.is_terminated());
 
     loop {
         // Attempt to read an event or disconnect a peer
@@ -241,6 +256,7 @@ async fn broker(
                 //     // TODO: Log errors, instead of writing to stderr
                 //     eprintln!("error: client already exists");
                 // }
+                println!("inside new client handler");
                 handlers::handle_new_client(peer_id, stream, shutdown, &mut clients, &disconnect_sender, channel_buf_size, &mut db_handle).await?;
             }
             // Adds an epic to the db_handle, and writes it to the database
@@ -527,6 +543,7 @@ async fn broker(
             }
         }
     }
+    println!("disconnecting broker loop");
     // Drop clients so that writers will finish
     drop(clients);
     // Drop disconnect_sender, and drain the rest of the disconnected peers
@@ -860,11 +877,25 @@ struct Cli {
 }
 
 fn main() {
-    let cli = Cli::parse();
-    println!("{}", cli.database_directory);
-    println!("{}", cli.database_filename);
-    println!("{}", cli.epic_directory);
-    println!("{}", cli.channel_size);
-    println!("{}", cli.address);
-    println!("{}", cli.port);
+    // let cli = Cli::parse();
+    println!("Starting server...");
+    // if let Err(e) = task::block_on(accept_loop(
+    //     (cli.address.as_str(), cli.port),
+    //     cli.channel_size,
+    //     cli.database_directory,
+    //     cli.database_filename,
+    //     cli.epic_directory
+    // )) {
+    //     eprintln!("{e}");
+    // }
+
+    if let Err(e) = task::block_on(accept_loop(
+        ("0.0.0.0", 8080),
+        100,
+        "/Users/benjaminhaase/development/Personal/async_jira_cli/test_database".to_string(),
+        "test.txt".to_string(),
+        "test_epics".to_string(),
+    )) {
+        eprintln!("{e}");
+    }
 }
