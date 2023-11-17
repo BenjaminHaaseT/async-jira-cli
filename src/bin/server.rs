@@ -193,8 +193,10 @@ async fn broker(
     // For reaping disconnected peers
     let (disconnect_sender, disconnect_receiver) = mpsc::unbounded::<(Uuid, Receiver<Response>)>();
 
+    println!("reading db state...");
     // For managing the state of the database
     let mut db_handle = DbState::load(db_dir, db_file_name, epic_dir).await?;
+    println!("db state read successfully");
 
     // Holds clients currently connected to the server
     let mut clients: HashMap<Uuid, Sender<Response>> = HashMap::new();
@@ -571,12 +573,25 @@ mod handlers {
                 mpsc::channel::<Response>(channel_buf_size);
             clients.insert(peer_id, client_sender.clone());
             let mut disconnect_sender = disconnect_sender.clone();
-            let _ = spawn_and_log_errors(async move {
-                let res =
-                    connection_write_loop(stream, &mut client_receiver, shutdown, peer_id)
-                        .await;
+            // let _ = spawn_and_log_errors(async move {
+            //     let res =
+            //         connection_write_loop(stream, &mut client_receiver, shutdown, peer_id)
+            //             .await;
+            //     let _ = disconnect_sender.send((peer_id, client_receiver)).await;
+            //     res
+            // });
+            let _ = task::spawn(async move {
+                // if let Err(e) = connection_write_loop(stream, &mut client_receiver, shutdown, peer_id).await {
+                //     eprintln!("{e}");
+                // }
+                let res = connection_write_loop(stream, &mut client_receiver, shutdown, peer_id).await;
                 let _ = disconnect_sender.send((peer_id, client_receiver)).await;
-                res
+                if let Err(e) = res {
+                    eprintln!("{e}");
+                    Err(e)
+                } else {
+                    Ok(())
+                }
             });
             let _ = log_connection_error(
                 client_sender
@@ -892,7 +907,7 @@ fn main() {
     if let Err(e) = task::block_on(accept_loop(
         ("0.0.0.0", 8080),
         100,
-        "/Users/benjaminhaase/development/Personal/async_jira_cli/test_database".to_string(),
+        "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database".to_string(),
         "test.txt".to_string(),
         "test_epics".to_string(),
     )) {

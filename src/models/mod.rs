@@ -4,7 +4,7 @@
 //! on the database.
 
 use std::collections::HashMap;
-use std::fs::OpenOptions as StdOpenOptions;
+// use std::fs::OpenOptions as StdOpenOptions;
 use std::path::{Path, PathBuf};
 
 use async_std::prelude::*;
@@ -14,7 +14,7 @@ use std::cmp::PartialEq;
 use std::convert::{AsRef, Into, TryFrom};
 use std::error::Error;
 use std::fmt::Formatter;
-use std::io::{BufRead as StdBufRead, BufReader as StdBufReader, BufWriter as StdBufWriter, ErrorKind as StdErrorKind, Read as StdRead, Seek as StdSeek, Write as StdWrite};
+// use std::io::{BufRead as StdBufRead, BufReader as StdBufReader, BufWriter as StdBufWriter, ErrorKind as StdErrorKind, Read as StdRead, Seek as StdSeek, Write as StdWrite};
 
 use crate::utils::{AsBytes, BytesEncode, TagDecoding, TagEncoding};
 
@@ -67,6 +67,7 @@ impl DbState {
         epic_dir: String,
     ) -> Result<DbState, DbError> {
         // Create file path
+        println!("Inside load db method..");
         let mut root_path = PathBuf::from(db_dir.clone());
         root_path.push(db_file_name.clone());
 
@@ -80,12 +81,15 @@ impl DbState {
             )));
         };
 
+        println!("loaded file successfully");
+
         let mut epics = HashMap::new();
         let mut lines = file.lines();
         let mut max_id = 0;
 
         let db_file_name_clone = db_file_name.clone();
 
+        println!("Attempting to read db file...");
         while let Some(line) = lines.next().await {
             let line = line.map_err(|_| {
                 DbError::FileReadError(format!(
@@ -97,7 +101,7 @@ impl DbState {
             let epic = Epic::load(epic_file_path, &mut max_id).await?;
             epics.insert(epic_id, epic);
         }
-
+        println!("finished loading db....");
         Ok(DbState {
             epics,
             epic_dir,
@@ -112,41 +116,41 @@ impl DbState {
     /// file if an associated db file has not been created, otherwise it will overwrite the
     /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
-    pub fn write(&self) -> Result<(), DbError> {
-        let mut writer = if let Ok(f) = StdOpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(&self.file_path)
-        {
-            std::io::BufWriter::new(f)
-        } else {
-            return Err(DbError::FileLoadError(format!(
-                "unable to open/create associated file: {:?}",
-                self.file_path.to_str()
-            )));
-        };
-
-        for (id, epic) in &self.epics {
-            let epic_file_path_str =
-                epic.file_path
-                    .to_str()
-                    .ok_or(DbError::InvalidUtf8Path(format!(
-                        "file path for epic: {} not valid utf8",
-                        id
-                    )))?;
-            let line = format!("{},{}\n", id, epic_file_path_str).into_bytes();
-            writer.write(line.as_slice()).map_err(|_e| {
-                DbError::FileWriteError(format!(
-                    "unable to write epic: {id} info to file: {}",
-                    self.db_file_name
-                ))
-            })?;
-            epic.write()?;
-        }
-
-        Ok(())
-    }
+    // pub fn write(&self) -> Result<(), DbError> {
+    //     let mut writer = if let Ok(f) = StdOpenOptions::new()
+    //         .write(true)
+    //         .truncate(true)
+    //         .create(true)
+    //         .open(&self.file_path)
+    //     {
+    //         std::io::BufWriter::new(f)
+    //     } else {
+    //         return Err(DbError::FileLoadError(format!(
+    //             "unable to open/create associated file: {:?}",
+    //             self.file_path.to_str()
+    //         )));
+    //     };
+    //
+    //     for (id, epic) in &self.epics {
+    //         let epic_file_path_str =
+    //             epic.file_path
+    //                 .to_str()
+    //                 .ok_or(DbError::InvalidUtf8Path(format!(
+    //                     "file path for epic: {} not valid utf8",
+    //                     id
+    //                 )))?;
+    //         let line = format!("{},{}\n", id, epic_file_path_str).into_bytes();
+    //         writer.write(line.as_slice()).map_err(|_e| {
+    //             DbError::FileWriteError(format!(
+    //                 "unable to write epic: {id} info to file: {}",
+    //                 self.db_file_name
+    //             ))
+    //         })?;
+    //         epic.write()?;
+    //     }
+    //
+    //     Ok(())
+    // }
 
     /// Method for writing the contents of the `DbState` to its associated file. Will create a new
     /// file if an associated db file has not been created, otherwise it will overwrite the
@@ -506,63 +510,63 @@ impl Epic {
 
     /// Writes the `Epic` to the file it is associated with, creates a new file if an associated
     /// file does not exist.
-    pub fn write(&self) -> Result<(), DbError> {
-        // Attempt to open file
-        let mut writer = if let Ok(f) = StdOpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open::<&Path>(self.file_path.as_ref())
-        {
-            std::io::BufWriter::new(f)
-        } else {
-            return Err(DbError::FileLoadError(format!(
-                "unable to open file: {:?}",
-                self.file_path.to_str()
-            )));
-        };
-
-        // Encode the tag of `self` and write epic data to file
-        let epic_tag = self.encode();
-        writer.write_all(&epic_tag).map_err(|_e| {
-            DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id))
-        })?;
-        writer.write_all(self.name.as_bytes()).map_err(|_e| {
-            DbError::FileWriteError(format!("unable to write epic: {} name to file", self.id))
-        })?;
-        writer
-            .write_all(self.description.as_bytes())
-            .map_err(|_e| {
-                DbError::FileWriteError(format!(
-                    "unable to write epic: {} description to file",
-                    self.id
-                ))
-            })?;
-
-        // Now write stories to file
-        for (story_id, story) in &self.stories {
-            let story_tag = story.encode();
-            writer.write_all(&story_tag).map_err(|_e| {
-                DbError::FileWriteError(format!("unable to write story: {} tag to file", *story_id))
-            })?;
-            writer.write_all(story.name.as_bytes()).map_err(|_e| {
-                DbError::FileWriteError(format!(
-                    "unable to write story: {} name to file",
-                    story.name.as_str()
-                ))
-            })?;
-            writer
-                .write_all(story.description.as_bytes())
-                .map_err(|_e| {
-                    DbError::FileWriteError(format!(
-                        "unable to write story: {} description to file",
-                        story.description.as_str()
-                    ))
-                })?;
-        }
-
-        Ok(())
-    }
+    // pub fn write(&self) -> Result<(), DbError> {
+    //     // Attempt to open file
+    //     let mut writer = if let Ok(f) = StdOpenOptions::new()
+    //         .write(true)
+    //         .create(true)
+    //         .truncate(true)
+    //         .open::<&Path>(self.file_path.as_ref())
+    //     {
+    //         std::io::BufWriter::new(f)
+    //     } else {
+    //         return Err(DbError::FileLoadError(format!(
+    //             "unable to open file: {:?}",
+    //             self.file_path.to_str()
+    //         )));
+    //     };
+    //
+    //     // Encode the tag of `self` and write epic data to file
+    //     let epic_tag = self.encode();
+    //     writer.write_all(&epic_tag).map_err(|_e| {
+    //         DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id))
+    //     })?;
+    //     writer.write_all(self.name.as_bytes()).map_err(|_e| {
+    //         DbError::FileWriteError(format!("unable to write epic: {} name to file", self.id))
+    //     })?;
+    //     writer
+    //         .write_all(self.description.as_bytes())
+    //         .map_err(|_e| {
+    //             DbError::FileWriteError(format!(
+    //                 "unable to write epic: {} description to file",
+    //                 self.id
+    //             ))
+    //         })?;
+    //
+    //     // Now write stories to file
+    //     for (story_id, story) in &self.stories {
+    //         let story_tag = story.encode();
+    //         writer.write_all(&story_tag).map_err(|_e| {
+    //             DbError::FileWriteError(format!("unable to write story: {} tag to file", *story_id))
+    //         })?;
+    //         writer.write_all(story.name.as_bytes()).map_err(|_e| {
+    //             DbError::FileWriteError(format!(
+    //                 "unable to write story: {} name to file",
+    //                 story.name.as_str()
+    //             ))
+    //         })?;
+    //         writer
+    //             .write_all(story.description.as_bytes())
+    //             .map_err(|_e| {
+    //                 DbError::FileWriteError(format!(
+    //                     "unable to write story: {} description to file",
+    //                     story.description.as_str()
+    //                 ))
+    //             })?;
+    //     }
+    //
+    //     Ok(())
+    // }
 
     /// An asynchronous version of `self.write()`.
     pub async fn write_async(&self) -> Result<(), DbError> {
