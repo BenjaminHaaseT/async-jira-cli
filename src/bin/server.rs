@@ -203,8 +203,6 @@ async fn broker(
 
     let mut events = receiver.fuse();
     let mut disconnect_receiver = disconnect_receiver.fuse();
-    println!("{}", events.is_done());
-    println!("{}", events.is_terminated());
 
     loop {
         // Attempt to read an event or disconnect a peer
@@ -573,17 +571,7 @@ mod handlers {
                 mpsc::channel::<Response>(channel_buf_size);
             clients.insert(peer_id, client_sender.clone());
             let mut disconnect_sender = disconnect_sender.clone();
-            // let _ = spawn_and_log_errors(async move {
-            //     let res =
-            //         connection_write_loop(stream, &mut client_receiver, shutdown, peer_id)
-            //             .await;
-            //     let _ = disconnect_sender.send((peer_id, client_receiver)).await;
-            //     res
-            // });
             let _ = task::spawn(async move {
-                // if let Err(e) = connection_write_loop(stream, &mut client_receiver, shutdown, peer_id).await {
-                //     eprintln!("{e}");
-                // }
                 let res = connection_write_loop(stream, &mut client_receiver, shutdown, peer_id).await;
                 let _ = disconnect_sender.send((peer_id, client_receiver)).await;
                 if let Err(e) = res {
@@ -684,9 +672,6 @@ mod handlers {
                 peer_id,
             );
             epic.write_async().await?;
-            // task::spawn_blocking(|| {
-            //     epic.write()
-            // }).await?;
         } else {
             let _ = log_connection_error(
                 client_sender
