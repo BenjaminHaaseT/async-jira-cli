@@ -128,6 +128,7 @@ impl<R: BufRead + Send + Unpin> Page<R> for HomePage {
     /// Ensures that any valid request is properly formatted for sending to the server if a successful
     /// `Action::RequestParsed` is returned.
     async fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
+        println!("Inside Homepage parse_request_option");
         if request_option.to_lowercase() == "q" {
             return Ok(Action::Quit);
         } else if request_option.to_lowercase() == "c" {

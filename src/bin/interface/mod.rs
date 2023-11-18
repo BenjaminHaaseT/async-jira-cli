@@ -69,11 +69,11 @@ where
 
             'inner: loop {
                 let mut user_option = String::new();
-                self.client_input.read_to_string(&mut user_option)
+                self.client_input.read_line(&mut user_option)
                     .await
                     .map_err(|_| UserError::ParseRequestOption)?;
-
-                let action_result = self.parse_request_option(user_option.as_str()).await;
+                let user_option = user_option.trim_end_matches('\n');
+                let action_result = self.parse_request_option(user_option).await;
 
                 match action_result {
                     Ok(action) => {
@@ -182,6 +182,7 @@ where
     }
 
     async fn parse_request_option(&mut self, option: &str) -> Result<Action, UserError> {
+        println!("Inside interface parse_request_option");
         assert!(!self.page_stack.is_empty(), "pages should have been loaded prior to calling `self.parse_request_option()`");
         let top_pos = self.page_stack.len() - 1;
         let mut top_page = &self.page_stack[top_pos];
