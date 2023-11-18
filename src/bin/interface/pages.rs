@@ -133,7 +133,6 @@ impl<R: BufRead + Send + Unpin> Page<R> for HomePage {
             return Ok(Action::Quit);
         } else if request_option.to_lowercase() == "c" {
             // User has selected to add a new epic to the database
-            // let mut input_reader = input_reader;
             let mut epic_name = String::new();
 
             println!("epic name:");
@@ -290,7 +289,6 @@ impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
             Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
             // Update epic's status in this case
-            // let mut input_reader = input_reader;
             let mut new_status_buf = String::new();
 
             // read the new status from the user, use a validation loop
@@ -329,8 +327,6 @@ impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
             let request_bytes = Event::get_update_epic_status_tag(self.frame.id, new_status).to_vec();
             Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "d" {
-            // let mut input_reader = input_reader;
-
             // Delete the epic
             println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
             let mut user_final_choice = String::new();
@@ -362,7 +358,6 @@ impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
             Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "c" {
             // Create a new story
-            let mut input_reader = input_reader;
             let mut story_name = String::new();
 
             println!("story name:");
@@ -475,7 +470,6 @@ impl<R: BufRead + Send + Unpin> Page<R> for StoryDetailPage {
         if request_option.to_lowercase() == "p" {
             Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
-            // let mut input_reader = input_reader;
             let mut status_buf = String::new();
 
             // Validation loop for getting new status from the user
@@ -508,7 +502,6 @@ impl<R: BufRead + Send + Unpin> Page<R> for StoryDetailPage {
             Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "d" {
             let mut user_final_choice = String::new();
-            // let mut input_reader = input_reader;
             println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
             let request_bytes = loop {
                 match input_reader.read_line(&mut user_final_choice).await {

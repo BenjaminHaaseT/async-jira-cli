@@ -72,6 +72,7 @@ where
                 self.client_input.read_line(&mut user_option)
                     .await
                     .map_err(|_| UserError::ParseRequestOption)?;
+
                 let user_option = user_option.trim_end_matches('\n');
                 let action_result = self.parse_request_option(user_option).await;
 
