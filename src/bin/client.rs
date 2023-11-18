@@ -1,11 +1,11 @@
 //! Implements a simple server that will send requests and receive responses from the server.
 //! Gives users an interface to interact with the server.
 
-use std::io::{BufRead, BufReader, stdin};
+// use std::io::{BufRead, BufReader, stdin};
 use std::fmt::{Debug, Display, Formatter};
 use clap::Parser;
 use async_std::{
-    io::ReadExt,
+    io::{Read, ReadExt, prelude::{BufRead, BufReadExt}, BufReader, stdin},
     net::{TcpStream, ToSocketAddrs},
     prelude::*,
     task::block_on,

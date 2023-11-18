@@ -5,28 +5,29 @@ use crate::UserError;
 use async_jira_cli::models::prelude::*;
 use async_jira_cli::utils::prelude::*;
 use async_jira_cli::events::prelude::*;
-use std::io::{Read, BufRead, Cursor, Seek, ErrorKind};
+// use std::io::{Read, BufRead, Cursor, Seek, ErrorKind};
+use std::marker::Unpin;
+use std::io::{Cursor, Read as StdRead, BufRead as StdBufRead};
+use async_std::io::{Read, ReadExt, BufRead, prelude::BufReadExt, Seek, ErrorKind};
 use std::ops::DerefMut;
+use async_trait;
 use unicode_width;
 
 pub mod prelude {
     pub use super::*;
 }
 
-// TODO: 1) implement parse option methods for pages
-//          Method should accept an option represented as a &str and a handle on Stdin
-//          Then either attempt to build a valid request or print an error message to the console
-
 /// The `Page` trait allows for different types of CLI interface pages to share
 /// the functionality of any typical CLI page i.e. `print_page`. The main purpose is to allow
 /// different types of pages to be held in a single data structure as trait objects.
-pub trait Page<R: std::io::BufRead> {
+#[async_trait::async_trait]
+pub trait Page<R: BufRead + Send + Unpin> {
     /// Required method, prints the page's contents to the console in a way that is formatted 
     fn print_page(&self);
     /// Required method, takes `request_option` and `input_reader` and attempts to create 
     /// an `Action`. Returns `Result`, the `Ok` variant if the request was parsed successfully, otherwise
     /// the `Err` variant.
-    fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError>;
+    async fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError>;
 }
 
 /// Represents the possible states that prompt the `Interface` to update.
@@ -107,7 +108,8 @@ impl HomePage {
     }
 }
 
-impl<R: std::io::BufRead> Page<R> for HomePage {
+#[async_trait::async_trait]
+impl<R: BufRead + Send + Unpin> Page<R> for HomePage {
     fn print_page(&self) {
         println!("{:-^65}", "EPICS");
         print!("{:^13}|", "id");
@@ -126,7 +128,7 @@ impl<R: std::io::BufRead> Page<R> for HomePage {
     /// The method will determine what action needs to be returned, given `request_option`.
     /// Ensures that any valid request is properly formatted for sending to the server if a successful
     /// `Action::RequestParsed` is returned.
-    fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
+    async fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "q" {
             return Ok(Action::Quit);
         } else if request_option.to_lowercase() == "c" {
@@ -137,6 +139,7 @@ impl<R: std::io::BufRead> Page<R> for HomePage {
             println!("epic name:");
 
             let _ = input_reader.read_line(&mut epic_name)
+                .await
                 .map_err(|_| UserError::ParseInputError)?;
 
             // Remove new line character from name
@@ -153,6 +156,7 @@ impl<R: std::io::BufRead> Page<R> for HomePage {
             println!("epic description: ");
 
             let _ = input_reader.read_line(&mut epic_description)
+                .await
                 .map_err(|_| UserError::ParseInputError)?;
 
             // Remove the new line character from description
@@ -247,7 +251,8 @@ impl EpicDetailPage {
     }
 }
 
-impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
+#[async_trait::async_trait]
+impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
     fn print_page(&self) {
         println!("{:-^65}", "EPIC");
         print!("{:^6}| ", "id");
@@ -280,7 +285,7 @@ impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
     /// Takes `request_option` which represents the user request and `input_reader` which is the
     /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
     /// the request was created successfully, otherwise
-    fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
+    async fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
             Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
@@ -291,7 +296,7 @@ impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
             // read the new status from the user, use a validation loop
             let new_status = loop {
                 self.print_status_update_menu();
-                match input_reader.read_line(&mut new_status_buf) {
+                match input_reader.read_line(&mut new_status_buf).await {
                     Ok(n) if n > 0 => {
                         // Remove new line character from buffer
                         new_status_buf = new_status_buf.trim_end().to_string();
@@ -331,7 +336,7 @@ impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
             let mut user_final_choice = String::new();
 
             let request_bytes = loop {
-                match input_reader.read_line(&mut user_final_choice) {
+                match input_reader.read_line(&mut user_final_choice).await {
                     Ok(n) if n > 0 => {
                         match user_final_choice.trim_end().to_lowercase().as_str() {
                             "y" => break Event::delete_epic_tag(self.frame.id).to_vec(),
@@ -363,6 +368,7 @@ impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
             println!("story name:");
 
             input_reader.read_line(&mut story_name)
+                .await
                 .map_err(|_| UserError::ParseInputError)?;
 
             // remove new line character at the end
@@ -379,6 +385,7 @@ impl<R: std::io::BufRead> Page<R> for EpicDetailPage {
             println!("story description: ");
 
             input_reader.read_line(&mut story_description)
+                .await
                 .map_err(|_| UserError::ParseInputError)?;
 
             // remove new line character at the end
@@ -442,7 +449,8 @@ impl StoryDetailPage {
     }
 }
 
-impl<R: std::io::BufRead> Page<R> for StoryDetailPage {
+#[async_trait::async_trait]
+impl<R: BufRead + Send + Unpin> Page<R> for StoryDetailPage {
     fn print_page(&self) {
         println!("{:-^65}", "Story");
         print!("{:^6}|", "id");
@@ -463,7 +471,7 @@ impl<R: std::io::BufRead> Page<R> for StoryDetailPage {
     /// Takes `request_option` which represents the user request and `input_reader` which is the
     /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
     /// the request was created successfully, otherwise returns `Err`
-    fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
+    async fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
             Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
@@ -473,7 +481,7 @@ impl<R: std::io::BufRead> Page<R> for StoryDetailPage {
             // Validation loop for getting new status from the user
             let new_status = loop {
                 self.print_status_update_menu();
-                match input_reader.read_to_string(&mut status_buf) {
+                match input_reader.read_to_string(&mut status_buf).await {
                     Ok(_n) => {
                         // Remove new line character from buffer
                         match status_buf.trim_end().parse::<u8>() {
@@ -503,7 +511,7 @@ impl<R: std::io::BufRead> Page<R> for StoryDetailPage {
             let mut input_reader = input_reader;
             println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
             let request_bytes = loop {
-                match input_reader.read_to_string(&mut user_final_choice) {
+                match input_reader.read_to_string(&mut user_final_choice).await {
                     Ok(n) if n > 0 => {
                         match user_final_choice.trim_end() {
                             "y" => break Event::get_delete_story_tag(self.story_frame.epic_id, self.story_frame.id).to_vec(),
@@ -573,7 +581,8 @@ fn justify_text_with_ellipses(width: usize, text: &String) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::io::{Cursor, Read, BufRead};
+    // use std::io::{Cursor, Read, BufRead};
+    use async_std::io::{Cursor, Read, ReadExt, prelude::{BufRead, BufReadExt}};
     use async_std::task::block_on;
     use uuid::Uuid;
 
@@ -775,7 +784,7 @@ mod test {
         let user_input = "q";
         let mut request_input = Cursor::new(vec![1u8, 2, 3, 4, 5]);
         // let request = block_on(HomePage::parse_request(user_input, &mut input_reader));
-        let request = homepage.parse_request(user_input, &mut request_input);
+        let request = block_on(homepage.parse_request(user_input, &mut request_input));
         println!("{:?}", request);
         assert!(request.is_ok());
 
@@ -785,7 +794,7 @@ mod test {
 
         let user_input = "Q";
         let mut request_input = Cursor::new(vec![1u8, 2, 3, 4, 5]);
-        let request = homepage.parse_request(user_input, &mut request_input);
+        let request = block_on(homepage.parse_request(user_input, &mut request_input));
         println!("{:?}", request);
         assert!(request.is_ok());
 
@@ -797,7 +806,7 @@ mod test {
         println!("Testing epic creation...");
         let user_input = "c";
         let mut input_reader = Cursor::new(String::from("Test Epic\nA good epic for testing purposes\n").into_bytes());
-        let request = homepage.parse_request(user_input, &mut input_reader);
+        let request = block_on(homepage.parse_request(user_input, &mut input_reader));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -826,7 +835,7 @@ mod test {
 
         let user_input = "C";
         let mut input_reader = Cursor::new(String::from("Test Epic\nA good epic for testing purposes").into_bytes());
-        let request = homepage.parse_request(user_input, &mut input_reader);
+        let request = block_on(homepage.parse_request(user_input, &mut input_reader));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -854,7 +863,7 @@ mod test {
         println!("Testing get epic option...");
         let user_input = "97";
         let mut request_input = Cursor::new(vec![0u8]);
-        let request = homepage.parse_request(user_input, &mut request_input);
+        let request = block_on(homepage.parse_request(user_input, &mut request_input));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -879,7 +888,7 @@ mod test {
         // Testing invalid input option
         let user_input = "djowalk";
         let mut request_input = Cursor::new(Vec::new());
-        let request = homepage.parse_request(user_input, &mut request_input);
+        let request = block_on(homepage.parse_request(user_input, &mut request_input));
         println!("{:?}", request);
         assert!(request.is_err());
     }
@@ -914,7 +923,7 @@ mod test {
         // Some empty request data
         let user_input = "p";
         let mut request_input = Cursor::new(vec![]);
-        let request = epic_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(epic_detail_page.parse_request(user_input, &mut request_input));
         println!("{:?}", request);
         assert!(request.is_ok());
         assert!(request.unwrap().is_previous_page());
@@ -922,7 +931,7 @@ mod test {
         println!("testing update option...");
         let user_input = "u";
         let mut request_input = Cursor::new(String::from("3\n").into_bytes());
-        let request = epic_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(epic_detail_page.parse_request(user_input, &mut request_input));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -947,7 +956,7 @@ mod test {
         println!("testing delete epic option...");
         let user_input = "d";
         let mut request_input = Cursor::new(String::from("y\n").into_bytes());
-        let request = epic_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(epic_detail_page.parse_request(user_input, &mut request_input));
 
         println!("{:?}", user_input);
         assert!(request.is_ok());
@@ -967,7 +976,7 @@ mod test {
         println!("testing delete epic option with cancel...");
         let user_input = "d";
         let mut request_input = Cursor::new(String::from("n\n").into_bytes());
-        let request = epic_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(epic_detail_page.parse_request(user_input, &mut request_input));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -979,7 +988,7 @@ mod test {
         println!("testing add story option...");
         let user_input = "c";
         let mut request_input = Cursor::new(String::from("Test Story\nA good story for testing purposes\n").into_bytes());
-        let request = epic_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(epic_detail_page.parse_request(user_input, &mut request_input));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -1001,7 +1010,7 @@ mod test {
         println!("testing get story detail option...");
         let user_input = "97";
         let mut request_input = Cursor::new(vec![]);
-        let request = epic_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(epic_detail_page.parse_request(user_input, &mut request_input));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -1024,7 +1033,7 @@ mod test {
         println!("testing bogus request option...");
         let user_option = "du98fd9e";
         let mut user_input = Cursor::new(String::from("basdfoiub\n"));
-        let request = epic_detail_page.parse_request(user_option, &mut user_input);
+        let request = block_on(epic_detail_page.parse_request(user_option, &mut user_input));
         println!("{:?}", request);
         assert!(request.is_err());
     }
@@ -1043,7 +1052,7 @@ mod test {
         println!("testing previous option...");
         let user_input = "p";
         let mut request_input = Cursor::new(vec![]);
-        let request = story_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(story_detail_page.parse_request(user_input, &mut request_input));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -1055,7 +1064,7 @@ mod test {
         println!("testing update option...");
         let user_input = "u";
         let mut request_input = Cursor::new(String::from("2\n").into_bytes());
-        let request = story_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(story_detail_page.parse_request(user_input, &mut request_input));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -1080,7 +1089,7 @@ mod test {
         println!("testing delete option...");
         let user_input = "d";
         let mut request_input = Cursor::new(String::from("y\n").into_bytes());
-        let request = story_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(story_detail_page.parse_request(user_input, &mut request_input));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -1103,7 +1112,7 @@ mod test {
 
         let user_input = "d";
         let mut request_input = Cursor::new(String::from("n\n").into_bytes());
-        let request = story_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(story_detail_page.parse_request(user_input, &mut request_input));
 
         println!("{:?}", request);
         assert!(request.is_ok());
@@ -1116,7 +1125,7 @@ mod test {
         let user_input = "asdojie038";
         let mut request_input = Cursor::new(vec![2, 34, 5, 1]);
 
-        let request = story_detail_page.parse_request(user_input, &mut request_input);
+        let request = block_on(story_detail_page.parse_request(user_input, &mut request_input));
 
         println!("{:?}", request);
         assert!(request.is_err());

@@ -2,9 +2,10 @@
 //! with the server.
 //!
 
-use std::io::BufRead;
-use std::marker::Unpin;
-use async_std::io::{Write, WriteExt, ReadExt, Read};
+// use std::io::BufRead;
+use std::marker::{Unpin, Send};
+use async_std::io::{Write, WriteExt, ReadExt, prelude::{BufRead, BufReadExt}, Read};
+use async_std::task;
 use async_jira_cli::response::prelude::*;
 use async_jira_cli::utils::prelude::*;
 use crate::UserError;
@@ -30,7 +31,7 @@ pub mod prelude {
 /// will display appropriate messages when errors arise.
 pub struct Interface<R, T>
 where
-    R: BufRead,
+    R: BufRead + Send + Unpin,
     T: WriteExt + ReadExt + Unpin,
 {
     page_stack: Vec<Box<dyn Page<R>>>,
@@ -44,7 +45,7 @@ where
 //          and parsing it correctly i.e. implementing the logic needed for the users given selection
 impl<R, T> Interface<R, T>
 where
-    R: BufRead,
+    R: BufRead + Send + Unpin,
     T: WriteExt + ReadExt + Unpin,
 {
     /// Creates a new `Interface`
@@ -69,6 +70,7 @@ where
             'inner: loop {
                 let mut user_option = String::new();
                 self.client_input.read_to_string(&mut user_option)
+                    .await
                     .map_err(|_| UserError::ParseRequestOption)?;
 
                 let action_result = self.parse_request_option(user_option.as_str()).await;
@@ -182,8 +184,13 @@ where
     async fn parse_request_option(&mut self, option: &str) -> Result<Action, UserError> {
         assert!(!self.page_stack.is_empty(), "pages should have been loaded prior to calling `self.parse_request_option()`");
         let top_pos = self.page_stack.len() - 1;
-        let mut top_page = &mut self.page_stack[top_pos];
-        top_page.parse_request(option, &mut self.client_input)
+        let mut top_page = &self.page_stack[top_pos];
+        // task::spawn_blocking(|| {
+        //     top_page.parse_request(option, &mut self.client_input)
+        // }
+        // ).await
+
+        top_page.parse_request(option, &mut self.client_input).await
     }
 
     async fn parse_successful_connection_response(&mut self, data_len: u64) -> Result<(), UserError> {
@@ -405,9 +412,9 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use async_std::io::{Cursor, Seek, SeekFrom};
+    use async_std::io::{Cursor, Seek, SeekFrom, BufReader, prelude::{BufRead}, stdin};
     use async_std::task::block_on;
-    use std::io::{BufRead, BufReader, stdin};
+    // use std::io::{BufRead, BufReader, stdin};
     use futures::AsyncSeekExt;
     use async_jira_cli::models::prelude::*;
     use frame::prelude::*;
