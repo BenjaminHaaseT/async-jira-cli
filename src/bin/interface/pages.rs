@@ -290,7 +290,7 @@ impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
             Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
             // Update epic's status in this case
-            let mut input_reader = input_reader;
+            // let mut input_reader = input_reader;
             let mut new_status_buf = String::new();
 
             // read the new status from the user, use a validation loop
@@ -329,7 +329,7 @@ impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
             let request_bytes = Event::get_update_epic_status_tag(self.frame.id, new_status).to_vec();
             Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "d" {
-            let mut input_reader = input_reader;
+            // let mut input_reader = input_reader;
 
             // Delete the epic
             println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
@@ -475,13 +475,13 @@ impl<R: BufRead + Send + Unpin> Page<R> for StoryDetailPage {
         if request_option.to_lowercase() == "p" {
             Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
-            let mut input_reader = input_reader;
+            // let mut input_reader = input_reader;
             let mut status_buf = String::new();
 
             // Validation loop for getting new status from the user
             let new_status = loop {
                 self.print_status_update_menu();
-                match input_reader.read_to_string(&mut status_buf).await {
+                match input_reader.read_line(&mut status_buf).await {
                     Ok(_n) => {
                         // Remove new line character from buffer
                         match status_buf.trim_end().parse::<u8>() {
@@ -508,10 +508,10 @@ impl<R: BufRead + Send + Unpin> Page<R> for StoryDetailPage {
             Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "d" {
             let mut user_final_choice = String::new();
-            let mut input_reader = input_reader;
+            // let mut input_reader = input_reader;
             println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
             let request_bytes = loop {
-                match input_reader.read_to_string(&mut user_final_choice).await {
+                match input_reader.read_line(&mut user_final_choice).await {
                     Ok(n) if n > 0 => {
                         match user_final_choice.trim_end() {
                             "y" => break Event::get_delete_story_tag(self.story_frame.epic_id, self.story_frame.id).to_vec(),
