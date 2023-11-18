@@ -64,7 +64,6 @@ pub struct HomePage {
 }
 
 impl HomePage {
-
     /// Associated method, attempts to create a new `HomePage` struct from `data`.
     /// Returns a `Result`, the `Ok` variant if creating was successful, otherwise `Err`.
     pub fn try_create(mut data: Vec<u8>) -> Result<Self, UserError> {
@@ -133,7 +132,7 @@ impl<R: BufRead + Send + Unpin> Page<R> for HomePage {
             return Ok(Action::Quit);
         } else if request_option.to_lowercase() == "c" {
             // User has selected to add a new epic to the database
-            let mut input_reader = input_reader;
+            // let mut input_reader = input_reader;
             let mut epic_name = String::new();
 
             println!("epic name:");
