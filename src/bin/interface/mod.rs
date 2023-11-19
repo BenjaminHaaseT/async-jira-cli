@@ -310,7 +310,7 @@ where
         println!();
 
         <HomePage as Page<R>>::print_page(&homepage);
-        assert_eq!(self.page_stack.len(), 1);
+        assert!(self.page_stack.len() > 0);
         self.page_stack = vec![homepage];
         Ok(())
     }
@@ -343,7 +343,7 @@ where
         println!();
 
         <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
-        assert_eq!(self.page_stack.len(), 2);
+        assert!(self.page_stack.len() > 1);
 
         while self.page_stack.len() > 1 {
             self.page_stack.pop();

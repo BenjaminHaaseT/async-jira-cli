@@ -22,6 +22,8 @@ pub mod prelude {
     pub use super::*;
 }
 
+// TODO: Set up logging of errors
+
 /// A top level abstraction for the database, all reads and writes to/from the database
 /// are performed via the `DbState` struct in some way.
 ///
