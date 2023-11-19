@@ -4,7 +4,7 @@
 //! on the database.
 
 use std::collections::HashMap;
-// use std::fs::OpenOptions as StdOpenOptions;
+use std::fs::OpenOptions as StdOpenOptions;
 use std::path::{Path, PathBuf};
 
 use async_std::prelude::*;
@@ -14,7 +14,7 @@ use std::cmp::PartialEq;
 use std::convert::{AsRef, Into, TryFrom};
 use std::error::Error;
 use std::fmt::Formatter;
-// use std::io::{BufRead as StdBufRead, BufReader as StdBufReader, BufWriter as StdBufWriter, ErrorKind as StdErrorKind, Read as StdRead, Seek as StdSeek, Write as StdWrite};
+use std::io::{BufRead as StdBufRead, BufReader as StdBufReader, BufWriter as StdBufWriter, ErrorKind as StdErrorKind, Read as StdRead, Seek as StdSeek, Write as StdWrite};
 
 use crate::utils::{AsBytes, BytesEncode, TagDecoding, TagEncoding};
 
@@ -116,41 +116,41 @@ impl DbState {
     /// file if an associated db file has not been created, otherwise it will overwrite the
     /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
-    // pub fn write(&self) -> Result<(), DbError> {
-    //     let mut writer = if let Ok(f) = StdOpenOptions::new()
-    //         .write(true)
-    //         .truncate(true)
-    //         .create(true)
-    //         .open(&self.file_path)
-    //     {
-    //         std::io::BufWriter::new(f)
-    //     } else {
-    //         return Err(DbError::FileLoadError(format!(
-    //             "unable to open/create associated file: {:?}",
-    //             self.file_path.to_str()
-    //         )));
-    //     };
-    //
-    //     for (id, epic) in &self.epics {
-    //         let epic_file_path_str =
-    //             epic.file_path
-    //                 .to_str()
-    //                 .ok_or(DbError::InvalidUtf8Path(format!(
-    //                     "file path for epic: {} not valid utf8",
-    //                     id
-    //                 )))?;
-    //         let line = format!("{},{}\n", id, epic_file_path_str).into_bytes();
-    //         writer.write(line.as_slice()).map_err(|_e| {
-    //             DbError::FileWriteError(format!(
-    //                 "unable to write epic: {id} info to file: {}",
-    //                 self.db_file_name
-    //             ))
-    //         })?;
-    //         epic.write()?;
-    //     }
-    //
-    //     Ok(())
-    // }
+    pub fn write_sync(&self) -> Result<(), DbError> {
+        let mut writer = if let Ok(f) = StdOpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(&self.file_path)
+        {
+            StdBufWriter::new(f)
+        } else {
+            return Err(DbError::FileLoadError(format!(
+                "unable to open/create associated file: {:?}",
+                self.file_path.to_str()
+            )));
+        };
+
+        for (id, epic) in &self.epics {
+            let epic_file_path_str =
+                epic.file_path
+                    .to_str()
+                    .ok_or(DbError::InvalidUtf8Path(format!(
+                        "file path for epic: {} not valid utf8",
+                        id
+                    )))?;
+            let line = format!("{},{}\n", id, epic_file_path_str).into_bytes();
+            writer.write(line.as_slice()).map_err(|_e| {
+                DbError::FileWriteError(format!(
+                    "unable to write epic: {id} info to file: {}",
+                    self.db_file_name
+                ))
+            })?;
+            epic.write_sync()?;
+        }
+
+        Ok(())
+    }
 
     /// Method for writing the contents of the `DbState` to its associated file. Will create a new
     /// file if an associated db file has not been created, otherwise it will overwrite the
@@ -431,16 +431,12 @@ impl Epic {
                     path.to_str()
                 ))
             })?;
-        // file.read_exact(epic_file_path_bytes.as_mut_slice())
-        //     .map_err(|_e| DbError::FileReadError(format!("unable to read epic: {id} file path from file {:?}", path.as_str())))?;
 
         // Create epic name, description and path as strings
         let epic_name = String::from_utf8(epic_name_bytes)
             .map_err(|_e| DbError::ParseError(format!("unable to parse epic: {id} name")))?;
         let epic_description = String::from_utf8(epic_description_bytes)
             .map_err(|_e| DbError::ParseError(format!("unable to parse epic: {id} description")))?;
-        // let epic_file_path = String::from_utf8(epic_file_path_bytes)
-        //     .map_err(|_e| DbError::ParseError(format!("unable to parse epic: {id} file path")))?;
 
         // Create stories hashmap and tag for the current story if any
         let mut stories = HashMap::new();
@@ -510,74 +506,74 @@ impl Epic {
 
     /// Writes the `Epic` to the file it is associated with, creates a new file if an associated
     /// file does not exist.
-    // pub fn write(&self) -> Result<(), DbError> {
-    //     // Attempt to open file
-    //     let mut writer = if let Ok(f) = StdOpenOptions::new()
-    //         .write(true)
-    //         .create(true)
-    //         .truncate(true)
-    //         .open::<&Path>(self.file_path.as_ref())
-    //     {
-    //         std::io::BufWriter::new(f)
-    //     } else {
-    //         return Err(DbError::FileLoadError(format!(
-    //             "unable to open file: {:?}",
-    //             self.file_path.to_str()
-    //         )));
-    //     };
-    //
-    //     // Encode the tag of `self` and write epic data to file
-    //     let epic_tag = self.encode();
-    //     writer.write_all(&epic_tag).map_err(|_e| {
-    //         DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id))
-    //     })?;
-    //     writer.write_all(self.name.as_bytes()).map_err(|_e| {
-    //         DbError::FileWriteError(format!("unable to write epic: {} name to file", self.id))
-    //     })?;
-    //     writer
-    //         .write_all(self.description.as_bytes())
-    //         .map_err(|_e| {
-    //             DbError::FileWriteError(format!(
-    //                 "unable to write epic: {} description to file",
-    //                 self.id
-    //             ))
-    //         })?;
-    //
-    //     // Now write stories to file
-    //     for (story_id, story) in &self.stories {
-    //         let story_tag = story.encode();
-    //         writer.write_all(&story_tag).map_err(|_e| {
-    //             DbError::FileWriteError(format!("unable to write story: {} tag to file", *story_id))
-    //         })?;
-    //         writer.write_all(story.name.as_bytes()).map_err(|_e| {
-    //             DbError::FileWriteError(format!(
-    //                 "unable to write story: {} name to file",
-    //                 story.name.as_str()
-    //             ))
-    //         })?;
-    //         writer
-    //             .write_all(story.description.as_bytes())
-    //             .map_err(|_e| {
-    //                 DbError::FileWriteError(format!(
-    //                     "unable to write story: {} description to file",
-    //                     story.description.as_str()
-    //                 ))
-    //             })?;
-    //     }
-    //
-    //     Ok(())
-    // }
+    pub fn write_sync(&self) -> Result<(), DbError> {
+        // Attempt to open file
+        let mut writer = if let Ok(f) = StdOpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open::<&Path>(self.file_path.as_ref())
+        {
+            StdBufWriter::new(f)
+        } else {
+            return Err(DbError::FileLoadError(format!(
+                "unable to open file: {:?}",
+                self.file_path.to_str()
+            )));
+        };
+
+        // Encode the tag of `self` and write epic data to file
+        let epic_tag = self.encode();
+        writer.write_all(&epic_tag).map_err(|_e| {
+            DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id))
+        })?;
+        writer.write_all(self.name.as_bytes()).map_err(|_e| {
+            DbError::FileWriteError(format!("unable to write epic: {} name to file", self.id))
+        })?;
+        writer
+            .write_all(self.description.as_bytes())
+            .map_err(|_e| {
+                DbError::FileWriteError(format!(
+                    "unable to write epic: {} description to file",
+                    self.id
+                ))
+            })?;
+
+        // Now write stories to file
+        for (story_id, story) in &self.stories {
+            let story_tag = story.encode();
+            writer.write_all(&story_tag).map_err(|_e| {
+                DbError::FileWriteError(format!("unable to write story: {} tag to file", *story_id))
+            })?;
+            writer.write_all(story.name.as_bytes()).map_err(|_e| {
+                DbError::FileWriteError(format!(
+                    "unable to write story: {} name to file",
+                    story.name.as_str()
+                ))
+            })?;
+            writer
+                .write_all(story.description.as_bytes())
+                .map_err(|_e| {
+                    DbError::FileWriteError(format!(
+                        "unable to write story: {} description to file",
+                        story.description.as_str()
+                    ))
+                })?;
+        }
+
+        Ok(())
+    }
 
     /// An asynchronous version of `self.write()`.
     pub async fn write_async(&self) -> Result<(), DbError> {
-        let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new()
+        let mut writer = if let Ok(f) = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .open::<&Path>(self.file_path.as_ref())
             .await
         {
-            async_std::io::BufWriter::new(f)
+            BufWriter::new(f)
         } else {
             return Err(DbError::FileLoadError(format!(
                 "unable to open file: {:?}",
@@ -1024,6 +1020,7 @@ impl TagEncoding for &StoryEncodeTag {}
 #[cfg(test)]
 mod test {
     use super::*;
+    use async_std::task::block_on;
 
     #[test]
     fn create_story_should_work() {
@@ -1124,14 +1121,14 @@ mod test {
 
         println!("{:?}", epic);
 
-        let write_result = epic.write();
+        let write_result = epic.write_sync();
 
         println!("{:?}", write_result);
 
         assert!(write_result.is_ok());
         let mut dummy_id = 0;
         // load the epic from the file
-        let loaded_epic_result = Epic::load(test_file_path, &mut dummy_id);
+        let loaded_epic_result = block_on(Epic::load(test_file_path, &mut dummy_id));
         println!("{:?}", loaded_epic_result);
         assert!(loaded_epic_result.is_ok());
 
@@ -1184,10 +1181,10 @@ mod test {
 
         println!("{:?}", epic);
 
-        assert!(epic.write().is_ok());
+        assert!(epic.write_sync().is_ok());
         let mut dummy_id = 0;
         // Test loading the epic from the file again and ensure they are equal
-        let loaded_epic_result = Epic::load(test_file_path.clone(), &mut dummy_id);
+        let loaded_epic_result = block_on(Epic::load(test_file_path.clone(), &mut dummy_id));
 
         println!("{:?}", loaded_epic_result);
 
@@ -1248,9 +1245,9 @@ mod test {
 
         println!("{:?}", epic);
 
-        assert!(epic.write().is_ok());
+        assert!(epic.write_sync().is_ok());
         let mut dummy_id = 0;
-        let loaded_epic_result = Epic::load(test_file_path.clone(), &mut dummy_id);
+        let loaded_epic_result = block_on(Epic::load(test_file_path.clone(), &mut dummy_id));
 
         assert!(loaded_epic_result.is_ok());
 
@@ -1288,9 +1285,9 @@ mod test {
 
         println!("{:?}", epic);
 
-        assert!(epic.write().is_ok());
+        assert!(epic.write_sync().is_ok());
         let mut dummy_id = 0;
-        let loaded_epic_result = Epic::load(test_file_path.clone(), &mut dummy_id);
+        let loaded_epic_result = block_on(Epic::load(test_file_path.clone(), &mut dummy_id));
 
         println!("{:?}", loaded_epic_result);
 
@@ -1350,14 +1347,14 @@ mod test {
 
         println!("{:?}", db_state);
 
-        assert!(db_state.write().is_ok());
+        assert!(db_state.write_sync().is_ok());
 
-        let mut db_state_prime_result = DbState::load(
+        let mut db_state_prime_result = block_on(DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_db1.txt".to_string(),
             "test_epics1".to_string(),
-        );
+        ));
 
         println!("{:?}", db_state_prime_result);
 
@@ -1386,15 +1383,14 @@ mod test {
 
         println!("{:?}", db_state);
 
-        assert!(db_state.write().is_ok());
+        assert!(db_state.write_sync().is_ok());
 
-        let mut db_state = DbState::load(
+        let mut db_state = block_on(DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_db2.txt".to_string(),
             "test_epics2".to_string(),
-        )
-        .expect("should load");
+        )).expect("should load");
 
         println!("{:?}", db_state);
 
@@ -1406,15 +1402,14 @@ mod test {
 
         assert!(db_state.delete_epic(cur_max_id).is_err());
 
-        assert!(db_state.write().is_ok());
+        assert!(db_state.write_sync().is_ok());
 
-        let mut db_state_loaded = DbState::load(
+        let mut db_state_loaded = block_on(DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_db2.txt".to_string(),
             "test_epics2".to_string(),
-        )
-        .expect("should load");
+        )).expect("should load");
 
         println!("{:?}", db_state_loaded);
 
@@ -1423,11 +1418,11 @@ mod test {
 
     #[test]
     fn test_db_state_add_delete_story() {
-        let mut db_state = DbState::load(
+        let mut db_state = block_on(DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database".to_string(),
             "test_db.txt".to_string(),
             "test_epics".to_string(),
-        ).expect("should load");
+        )).expect("should load");
 
         println!("{:?}", db_state);
 
@@ -1462,15 +1457,14 @@ mod test {
 
         println!("{:?}", db_state);
 
-        assert!(db_state.write().is_ok());
+        assert!(db_state.write_sync().is_ok());
 
-        let mut db_state = DbState::load(
+        let mut db_state = block_on(DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_db.txt".to_string(),
             "test_epics".to_string(),
-        )
-        .expect("should load");
+        )).expect("should load");
 
         println!("{:?}", db_state);
 
@@ -1617,12 +1611,12 @@ mod test {
 
         assert!(handle.is_ok());
 
-        let mut db_state_loaded_res = DbState::load(
+        let mut db_state_loaded_res = block_on(DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db1.txt".to_string(),
             "async_test_epics1".to_string(),
-        );
+        ));
 
         assert!(db_state_loaded_res.is_ok());
 
@@ -1664,12 +1658,12 @@ mod test {
 
         assert!(handle.is_ok());
 
-        let mut db_state_loaded_res = DbState::load(
+        let mut db_state_loaded_res = block_on(DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db2.txt".to_string(),
             "async_test_epics2".to_string(),
-        );
+        ));
 
         assert!(db_state_loaded_res.is_ok());
 
@@ -1689,12 +1683,12 @@ mod test {
 
         assert!(handle.is_ok());
 
-        let db_state_loaded_res = DbState::load(
+        let db_state_loaded_res = block_on(DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db2.txt".to_string(),
             "async_test_epics2".to_string(),
-        );
+        ));
 
         assert!(db_state_loaded_res.is_ok());
 
@@ -1748,12 +1742,12 @@ mod test {
 
         assert!(task::block_on(db_state.write_async()).is_ok());
 
-        let mut db_state_loaded_res = DbState::load(
+        let mut db_state_loaded_res = block_on(DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db3.txt".to_string(),
             "async_test_epics3".to_string(),
-        );
+        ));
 
         assert!(db_state_loaded_res.is_ok());
 
@@ -1783,12 +1777,12 @@ mod test {
         assert!(handle.is_ok());
 
         // Ensure changes persist
-        let mut db_state_loaded_res = DbState::load(
+        let mut db_state_loaded_res = block_on(DbState::load(
             "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database"
                 .to_string(),
             "test_async_db3.txt".to_string(),
             "async_test_epics3".to_string(),
-        );
+        ));
 
         assert!(db_state_loaded_res.is_ok());
 
