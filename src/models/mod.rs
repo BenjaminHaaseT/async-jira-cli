@@ -25,30 +25,33 @@ pub mod prelude {
 // TODO: Set up logging of errors
 
 /// A top level abstraction for the database, all reads and writes to/from the database
-/// are performed via the `DbState` struct in some way.
+/// are performed via the `DbState` struct.
 ///
-/// A `DbState` acts as the conduit for reading and writing to the database. It can therefore
+/// A `DbState` acts as the conduit for reading and writing to the database. It can
 /// load an already existing database or be used to create a new one.
 #[derive(Debug, PartialEq)]
 pub struct DbState {
     /// Holds the mapping from epic id's to `Epic`s
     epics: HashMap<u32, Epic>,
+
     /// A string representing the path to the database directory
     db_dir: String,
+
     /// A string representing the database file name e.g. db.txt
     db_file_name: String,
+
     /// A string representing the database epics directory
     epic_dir: String,
+
     /// A `PathBuf` of the absolute path to the database file
     file_path: PathBuf,
+
     /// For giving items a unique id
     last_unique_id: u32,
 }
 
 impl DbState {
     /// Associated method for creating a new `DbState`.
-    ///
-    ///
     pub fn new(db_dir: String, db_file_name: String, epic_dir: String) -> DbState {
         let mut file_path = PathBuf::from(db_dir.as_str());
         file_path.push(db_file_name.as_str());
@@ -63,13 +66,16 @@ impl DbState {
     }
 
     /// Associated method for loading data already saved into a new `DbState`.
+    ///
+    /// Takes `db_dir`, `db_file_name` and `epic_dir` as parameters and attempts to load the data
+    /// stored at those locations into a `DbState` instance. The method can fail if the data saved
+    /// was not properly formatted, hence it returns a `Result`.
     pub async fn load(
         db_dir: String,
         db_file_name: String,
         epic_dir: String,
     ) -> Result<DbState, DbError> {
         // Create file path
-        println!("Inside load db method..");
         let mut root_path = PathBuf::from(db_dir.clone());
         root_path.push(db_file_name.clone());
 
@@ -83,15 +89,12 @@ impl DbState {
             )));
         };
 
-        println!("loaded file successfully");
-
         let mut epics = HashMap::new();
         let mut lines = file.lines();
         let mut max_id = 0;
 
         let db_file_name_clone = db_file_name.clone();
 
-        println!("Attempting to read db file...");
         while let Some(line) = lines.next().await {
             let line = line.map_err(|_| {
                 DbError::FileReadError(format!(
@@ -103,7 +106,7 @@ impl DbState {
             let epic = Epic::load(epic_file_path, &mut max_id).await?;
             epics.insert(epic_id, epic);
         }
-        println!("finished loading db....");
+
         Ok(DbState {
             epics,
             epic_dir,
@@ -154,10 +157,11 @@ impl DbState {
         Ok(())
     }
 
-    /// Method for writing the contents of the `DbState` to its associated file. Will create a new
+    /// Asynchronous method for writing the contents of the `DbState` to its associated file. Will create a new
     /// file if an associated db file has not been created, otherwise it will overwrite the
     /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
+    /// This method is the asynchronous version of `DbState::write_sync()`.
     pub async fn write_async(&self) -> Result<(), DbError> {
         let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new()
             .write(true)
@@ -335,6 +339,7 @@ impl DbState {
         }
     }
 
+    /// Returns the value of `self.last_unique_id`.
     pub fn last_unique_id(&self) -> u32 {
         self.last_unique_id
     }
@@ -352,19 +357,26 @@ impl AsBytes for DbState {
     }
 }
 
-/// A struct that encapsulates all pertinent information and behaviors for a single epic.
+/// Encapsulates all pertinent information and behavior for a single epic.
+///
+/// Stores the data about an epic, as well methods for updating an epic.
 #[derive(Debug, PartialEq)]
 pub struct Epic {
     /// The unique identifier of the epic
     id: u32,
+
     /// The name of the epic
     name: String,
+
     /// The description of the epic
     description: String,
+
     /// The current status of the Epic
     status: Status,
+
     /// The file path the current epic is located in
     file_path: PathBuf,
+
     /// The mapping from unique story id's to the stories contained in the particular `Epic`
     stories: HashMap<u32, Story>,
 }
@@ -390,7 +402,10 @@ impl Epic {
     }
 
     /// Associated method for loading a `Epic` from `path`. The method is fallible, and so a `Result<Epic, DbError>` is returned,
-    /// where the `Err` variant is the unsuccessful `load`.
+    /// where the `Err` variant is the unsuccessful `load`. Note that `max_id` is a mutable reference of an `u32`,
+    /// intended to be the value of a `DbState`s `last_unique_id` to update while loading data, that way the newly created `DbState` will
+    /// have a `last_unique_id` that is representative of the data that has been loaded. This method does imply very tight coupling between
+    /// the `Epic` struct and the `DbState`, and therefore is not part of `Epic`s public interface.
     async fn load(path: PathBuf, max_id: &mut u32) -> Result<Epic, DbError> {
         // Attempt to open the file
         let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path.clone()).await {
@@ -413,8 +428,6 @@ impl Epic {
 
         let mut epic_name_bytes = vec![0_u8; name_len as usize];
         let mut epic_description_bytes = vec![0_u8; description_len as usize];
-        // TODO: rewrite epic so file path is not saved in file
-        // let mut epic_file_path_bytes = vec![0_u8; file_path_len as usize];
 
         // Read the bytes from the file
         file.read_exact(epic_name_bytes.as_mut_slice())
@@ -507,7 +520,8 @@ impl Epic {
     }
 
     /// Writes the `Epic` to the file it is associated with, creates a new file if an associated
-    /// file does not exist.
+    /// file does not exist. The method can fail for various reasons, the file not being valid for example,
+    /// and so the return value is a `Result`. `Ok` in the successful case and `Err` in the unsuccessful case.
     pub fn write_sync(&self) -> Result<(), DbError> {
         // Attempt to open file
         let mut writer = if let Ok(f) = StdOpenOptions::new()
@@ -566,7 +580,10 @@ impl Epic {
         Ok(())
     }
 
-    /// An asynchronous version of `self.write()`.
+    /// Asynchronously writes the `Epic` to the file it is associated with, creates a new file if an associated
+    /// file does not exist. The method can fail for various reasons, the file not being valid for example,
+    /// and so the return value is a `Result`. `Ok` in the successful case and `Err` in the unsuccessful case.
+    /// The method is essentially the asynchronous version of `Epic::write_sync()`.
     pub async fn write_async(&self) -> Result<(), DbError> {
         let mut writer = if let Ok(f) = OpenOptions::new()
             .write(true)
@@ -782,12 +799,16 @@ impl BytesEncode for Epic {
 pub struct Story {
     /// The id of `self`
     id: u32,
+
     /// The `Epic` id that contains the `Story`
     epic_id: u32,
+
     /// Name of the `Story`
     name: String,
+
     /// Description of the `Story`
     description: String,
+
     /// The current status of the `Story`
     status: Status,
 }
@@ -890,7 +911,7 @@ impl BytesEncode for Story {
     }
 }
 
-/// Represents the status of either a `Epic` or a `Story` struct
+/// Represents the status of either a `Epic` or a `Story` struct.
 #[derive(Debug, Copy, Clone)]
 pub enum Status {
     Open,
@@ -948,7 +969,7 @@ impl std::fmt::Display for Status {
         }
     }
 }
-
+/// The error type returned by any failing process that occurs on the server.
 #[derive(Debug, Clone)]
 pub enum DbError {
     FileLoadError(String),

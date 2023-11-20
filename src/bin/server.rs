@@ -190,15 +190,11 @@ async fn broker(
     epic_dir: String,
     channel_buf_size: usize,
 ) -> Result<(), DbError> {
-    println!("Inside broker task");
-
     // For reaping disconnected peers
     let (disconnect_sender, disconnect_receiver) = mpsc::unbounded::<(Uuid, Receiver<Response>)>();
 
-    println!("reading db state...");
     // For managing the state of the database
     let mut db_handle = DbState::load(db_dir, db_file_name, epic_dir).await?;
-    println!("db state read successfully");
 
     // Holds clients currently connected to the server
     let mut clients: HashMap<Uuid, Sender<Response>> = HashMap::new();
@@ -234,7 +230,6 @@ async fn broker(
                 stream,
                 shutdown,
             } => {
-                println!("inside new client handler");
                 handlers::handle_new_client(peer_id, stream, shutdown, &mut clients, &disconnect_sender, channel_buf_size, &mut db_handle).await?;
             }
             // Adds an epic to the db_handle, and writes it to the database
@@ -301,7 +296,6 @@ async fn broker(
             }
         }
     }
-    println!("disconnecting broker loop");
     // Drop clients so that writers will finish
     drop(clients);
     // Drop disconnect_sender, and drain the rest of the disconnected peers
@@ -309,7 +303,6 @@ async fn broker(
     while let Some((_peer_id, _client_receiver)) = disconnect_receiver.next().await {}
     Ok(())
 }
-
 
 
 mod handlers {
@@ -327,8 +320,10 @@ mod handlers {
         if !clients.contains_key(&peer_id) {
             let (mut client_sender, mut client_receiver) =
                 mpsc::channel::<Response>(channel_buf_size);
+
             clients.insert(peer_id, client_sender.clone());
             let mut disconnect_sender = disconnect_sender.clone();
+
             let _ = task::spawn(async move {
                 let res = connection_write_loop(stream, &mut client_receiver, shutdown, peer_id).await;
                 let _ = disconnect_sender.send((peer_id, client_receiver)).await;
@@ -339,6 +334,7 @@ mod handlers {
                     Ok(())
                 }
             });
+
             let _ = log_connection_error(
                 client_sender
                     .send(Response::ClientAddedOk(db_handle.as_bytes()))

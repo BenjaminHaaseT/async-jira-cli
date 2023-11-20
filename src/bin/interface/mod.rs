@@ -59,7 +59,6 @@ where
 
     pub async fn run(&mut self) -> Result<(), UserError> {
         let mut tag_buf = [0u8; 18];
-
         'outer: loop {
             self.connection_stream.read_exact(&mut tag_buf)
                 .await
@@ -183,14 +182,9 @@ where
     }
 
     async fn parse_request_option(&mut self, option: &str) -> Result<Action, UserError> {
-        println!("Inside interface parse_request_option");
         assert!(!self.page_stack.is_empty(), "pages should have been loaded prior to calling `self.parse_request_option()`");
         let top_pos = self.page_stack.len() - 1;
         let mut top_page = &self.page_stack[top_pos];
-        // task::spawn_blocking(|| {
-        //     top_page.parse_request(option, &mut self.client_input)
-        // }
-        // ).await
 
         top_page.parse_request(option, &mut self.client_input).await
     }
@@ -211,7 +205,6 @@ where
 
         // Display homepage if successful
         <HomePage as Page<R>>::print_page(&homepage);
-        println!();
 
         // Save homepage to `self.page_stack`
         self.page_stack.push(homepage);
@@ -236,7 +229,6 @@ where
 
         // Display homepage if successful
         <HomePage as Page<R>>::print_page(&homepage);
-        println!();
 
         self.page_stack = vec![homepage];
         Ok(())
@@ -257,7 +249,6 @@ where
 
         // Display homepage if successful
         <HomePage as Page<R>>::print_page(&homepage);
-        println!();
 
         self.page_stack = vec![homepage];
         Ok(())
@@ -310,6 +301,7 @@ where
         println!();
 
         <HomePage as Page<R>>::print_page(&homepage);
+
         assert!(self.page_stack.len() > 0);
         self.page_stack = vec![homepage];
         Ok(())
@@ -327,6 +319,7 @@ where
         println!();
 
         <StoryDetailPage as Page<R>>::print_page(&story_detail_page);
+
         self.page_stack.push(story_detail_page);
         Ok(())
     }
@@ -343,8 +336,8 @@ where
         println!();
 
         <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
-        assert!(self.page_stack.len() > 1);
 
+        assert!(self.page_stack.len() > 1);
         while self.page_stack.len() > 1 {
             self.page_stack.pop();
         }
@@ -365,6 +358,7 @@ where
         println!();
 
         <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
+
         assert_eq!(self.page_stack.len(), 2);
         self.page_stack.pop();
         self.page_stack.push(epic_detail_page);
@@ -383,6 +377,7 @@ where
         println!();
 
         <EpicDetailPage as Page<R>>::print_page(&epic_detail_page);
+
         assert!(!self.page_stack.is_empty());
         while self.page_stack.len() > 1 {
             self.page_stack.pop();
