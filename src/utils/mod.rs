@@ -1,3 +1,5 @@
+//! Provides basic types and functions that are useful across multiple modules.
+
 pub mod prelude {
     pub use super::*;
 }
@@ -34,10 +36,13 @@ pub trait TagDecoding {}
 pub trait BytesEncode {
     /// The type of tag encoding for the implementing type
     type Tag: TagEncoding;
+
     /// The type that `Self::Tag` gets decoded into
     type DecodedTag: TagDecoding;
+
     /// Required: encodes the type into a `Self::Tag`
     fn encode(&self) -> Self::Tag;
+
     /// Required: decodes `Self::Tag` into a `Self::DecodedTag`
     fn decode(tag: &Self::Tag) -> Self::DecodedTag;
 }
