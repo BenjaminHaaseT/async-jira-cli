@@ -16,6 +16,7 @@ mod interface;
 use crate::interface::prelude::*;
 use async_jira_cli::utils::prelude::*;
 
+/// The error type for any user facing error encountered by the client.
 #[derive(Debug)]
 pub enum UserError {
     ServerConnection(String),
@@ -47,14 +48,17 @@ impl Display for UserError {
 
 impl std::error::Error for UserError {}
 
+/// Represents the command line interface arguments for running the binary.
 #[derive(Parser)]
 struct Cli {
     /// The address of the server the client is connecting to
     address: String,
+
     /// Port number
     port: u16,
 }
 
+/// Takes `server_addrs` and starts a new client connection.
 async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), UserError> {
     println!("connecting to server {:?}...", server_addrs);
     let connection = TcpStream::connect(server_addrs.clone())
@@ -68,7 +72,7 @@ async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), Use
 }
 
 fn main() {
-    // let cli = Cli::parse();
+    let cli = Cli::parse();
     let addrs = ("127.0.0.1", 8080);
     if let Err(e) = block_on(run(addrs)) {
         eprintln!("{e}");

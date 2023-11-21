@@ -22,7 +22,7 @@ use async_jira_cli::models::prelude::*;
 use async_jira_cli::response::prelude::*;
 use async_jira_cli::utils::{AsBytes, Void};
 
-//TODO: set up logging of errors
+//TODO: set up logging/tracing of errors
 
 /// Helper function that will take a future, spawn it as a new task and log any errors propagated from the spawned future.
 async fn spawn_and_log_errors(
