@@ -11,7 +11,8 @@ pub mod prelude {
     pub use super::*;
 }
 
-/// A struct that is used to parse particular events from a `TcpStream` and sent a a broker task.
+/// A struct that is used to parse particular events from a `TcpStream` and sent a broker task.
+/// Represents all possible events that can be triggered from a connected client.
 #[derive(Debug)]
 pub enum Event {
     /// Represents the event of a new client connecting
@@ -76,7 +77,7 @@ pub enum Event {
 }
 
 impl Event {
-    /// An associated method attempt creation of a new `Event` given `client_id`, `tag` and `stream`.
+    /// Associated method that attempts to create a new `Event` given `client_id`, `tag` and `stream`.
     /// Is fallible, and hence returns a `Result<Event, DbError>`.
     pub async fn try_create<R: ReadExt + Unpin>(
         client_id: Uuid,

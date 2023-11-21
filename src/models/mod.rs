@@ -1039,7 +1039,6 @@ impl TagEncoding for StoryEncodeTag {}
 impl TagEncoding for &StoryEncodeTag {}
 
 
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1057,6 +1056,7 @@ mod test {
         println!("{:?}", story);
         assert!(true)
     }
+
     #[test]
     fn story_encode_decode_should_work() {
         let story = Story::new(

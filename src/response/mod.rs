@@ -65,6 +65,9 @@ impl Response {
         todo!()
     }
 
+    /// Associated helper method to aid in serialization/deserialization of a `Response`.
+    /// Takes a `ResponseEncodeTag`, `buf` and a vector of bytes `data`
+    /// and serializes the length of `data` into `buf`.
     fn encode_data_len(buf: &mut [u8; 18], data: &Vec<u8>) {
         let data_len = data.len() as u64;
         for i in 0..7 {
@@ -72,12 +75,18 @@ impl Response {
         }
     }
 
+    /// Associated helper method to aid in serialization/deserialization of a `Response`.
+    /// Takes a `ResponseEncodeTag`, `buf` and a `u32` , `epic_id` and serializes `epic_id`
+    /// into `buf`.
     fn encode_epic_id(buf: &mut [u8; 18], epic_id: u32) {
         for i in 2..6 {
             buf[i] ^= ((epic_id >> (8 * (i as u32 - 2))) & 0xff) as u8;
         }
     }
 
+    /// Associated helper method to aid in serialization/deserialization of a `Response`.
+    /// Takes a `ResponseEncodeTag`, `buf` and a `u32`, `story_id` and serializes `story_id` into
+    /// `buf`.
     fn encode_story_id(buf: &mut [u8; 18], story_id: u32) {
         for i in 6..10 {
             buf[i] ^= ((story_id >> (8 * ((i as u32 - 2) % 4))) & 0xff) as u8;
@@ -86,7 +95,7 @@ impl Response {
 }
 
 impl AsBytes for Response {
-    /// Method that will convert a `Response` into an encoded vector of bytes.
+    /// Converts `Response` into a serialized vector of bytes.
     fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         bytes.extend_from_slice(&self.encode());
@@ -109,10 +118,12 @@ impl AsBytes for Response {
     }
 }
 
+/// The type of tag use to serialize a `Response` into
 type ResponseEncodeTag = [u8; 18];
 
 impl TagEncoding for ResponseEncodeTag {}
 
+/// The type of tag use to deserialize a `Response` from
 type ResponseDecodeTag = (u16, u32, u32, u64);
 
 impl TagDecoding for ResponseDecodeTag {}
@@ -128,10 +139,6 @@ impl BytesEncode for Response {
             Response::ClientAddedOk(data) => {
                 encoded_tag[0] ^= (1 << 7);
                 encoded_tag[1] ^= 1;
-                // let data_len = data.len() as u64;
-                // for i in 0..7 {
-                //     bytes[i + 10] ^= ((data_len >> (i as u64 * 8)) & 0xff) as u8;
-                // }
                 Response::encode_data_len(&mut encoded_tag, data);
                 encoded_tag
             }
@@ -144,9 +151,6 @@ impl BytesEncode for Response {
                 encoded_tag[1] ^= (1 << 2);
                 Response::encode_epic_id(&mut encoded_tag, *epic_id);
                 Response::encode_data_len(&mut encoded_tag, data);
-                // for i in 2..6u32 {
-                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                // }
                 encoded_tag
             }
             Response::DeletedEpicOk(epic_id, data) => {
@@ -154,9 +158,6 @@ impl BytesEncode for Response {
                 encoded_tag[1] ^= (1 << 3);
                 Response::encode_epic_id(&mut encoded_tag, *epic_id);
                 Response::encode_data_len(&mut encoded_tag, data);
-                // for i in 2..6u32 {
-                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                // }
                 encoded_tag
             }
             Response::GetEpicOk(epic_id, data) => {
@@ -171,9 +172,6 @@ impl BytesEncode for Response {
                 encoded_tag[1] ^= (1 << 5);
                 Response::encode_epic_id(&mut encoded_tag, *epic_id);
                 Response::encode_data_len(&mut encoded_tag, data);
-                // for i in 2..6u32 {
-                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                // }
                 encoded_tag
             }
             Response::EpicDoesNotExist(epic_id, data) => {
@@ -181,9 +179,6 @@ impl BytesEncode for Response {
                 encoded_tag[1] ^= (1 << 6);
                 Response::encode_epic_id(&mut encoded_tag, *epic_id);
                 Response::encode_data_len(&mut encoded_tag, data);
-                // for i in 2..6u32 {
-                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                // }
                 encoded_tag
             }
             Response::GetStoryOk(story_id, data) => {
@@ -196,12 +191,6 @@ impl BytesEncode for Response {
             Response::StoryDoesNotExist(epic_id, story_id, data) => {
                 encoded_tag[0] ^= (1 << 7);
                 encoded_tag[0] ^= 1;
-                // for i in 2..6u32 {
-                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                // }
-                // for i in 6..10u32 {
-                //     bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
-                // }
                 Response::encode_epic_id(&mut encoded_tag, *epic_id);
                 Response::encode_story_id(&mut encoded_tag, *story_id);
                 Response::encode_data_len(&mut encoded_tag, data);
@@ -210,12 +199,7 @@ impl BytesEncode for Response {
             Response::AddedStoryOk(epic_id, story_id, data) => {
                 encoded_tag[0] ^= (1 << 7);
                 encoded_tag[0] ^= (1 << 1);
-                // for i in 2..6u32 {
-                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                // }
-                // for i in 6..10u32 {
-                //     bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
-                // }
+
                 Response::encode_epic_id(&mut encoded_tag, *epic_id);
                 Response::encode_story_id(&mut encoded_tag, *story_id);
                 Response::encode_data_len(&mut encoded_tag, data);
@@ -224,12 +208,6 @@ impl BytesEncode for Response {
             Response::DeletedStoryOk(epic_id, story_id, data) => {
                 encoded_tag[0] ^= (1 << 7);
                 encoded_tag[0] ^= (1 << 2);
-                // for i in 2..6u32 {
-                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                // }
-                // for i in 6..10u32 {
-                //     bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
-                // }
                 Response::encode_epic_id(&mut encoded_tag, *epic_id);
                 Response::encode_story_id(&mut encoded_tag, *story_id);
                 Response::encode_data_len(&mut encoded_tag, data);
@@ -238,12 +216,6 @@ impl BytesEncode for Response {
             Response::StoryStatusUpdateOk(epic_id, story_id, data) => {
                 encoded_tag[0] ^= (1 << 7);
                 encoded_tag[0] ^= (1 << 3);
-                // for i in 2..6u32 {
-                //     bytes[i as usize] ^= (((*epic_id) >> (8 * (i - 2))) & 0xff) as u8;
-                // }
-                // for i in 6..10u32 {
-                //     bytes[i as usize] ^= (((*story_id) >> (8 * ((i - 2) % 4))) & 0xff) as u8;
-                // }
                 Response::encode_epic_id(&mut encoded_tag, *epic_id);
                 Response::encode_story_id(&mut encoded_tag, *story_id);
                 Response::encode_data_len(&mut encoded_tag, data);
