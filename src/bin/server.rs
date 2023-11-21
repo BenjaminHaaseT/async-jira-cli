@@ -1,4 +1,5 @@
 //! The binary that will run the server for the asynchronous database
+
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Debug;
@@ -56,6 +57,10 @@ fn log_connection_error(result: Result<(), SendError>, peer_id: Uuid) -> bool {
 /// and a `channel_buf_size` representing the capacity of channel that connects to the broker task.
 /// The function will start a new listener awaiting for incoming connections from clients, it then starts
 /// a new broker task, and then passes each client connection to a separate connection task.
+///
+/// # Returns
+///
+/// A `Result<(), DbError>`, the `Ok` variant if no errors occurred, otherwise `Err`.
 async fn accept_loop(
     addrs: impl ToSocketAddrs + Debug + Clone,
     channel_buf_size: usize,
@@ -100,10 +105,14 @@ async fn accept_loop(
 }
 
 /// Takes a `TcpStream` and a `Sender<Option<Event>>` representing the client connection and the sending
-/// end of a channel connected to a broker task. Attempts to read new events from the client stream and send them
+/// end of a channel connected to the broker task. Attempts to read new events from the client stream and send them
 /// to the broker task. If a new event is successfully read from the client stream it is sent to the broker via `broker_sender`,
-/// otherwise it sends `None`. The function can fail if there is an error parsing `client_stream.peer_addr()` as a string,
+/// otherwise it sends `Event::UnparseableEvent`. The function can fail if there is an error parsing `client_stream.peer_addr()` as a string or
 /// a new `Event` is not able to be sent to the broker.
+///
+/// # Returns
+///
+/// A `Result<(), DbError>`, the `Ok` variant if successful, otherwise `Err`.
 async fn connection_loop(
     client_stream: TcpStream,
     mut broker_sender: Sender<Event>,
@@ -150,7 +159,12 @@ async fn connection_loop(
 }
 
 /// Takes `stream` and `client_receiver` and writes all responses received from the broker task to
-/// `stream`.
+/// `stream`. In the case that the client is disconnected, this task is notified via `client_shutdown`,
+/// in which case the loop terminates and the task finishes.
+///
+/// # Returns
+///
+/// A `Result<(), DbError>`, the `Ok` variant if successful, otherwise the `Err` variant.
 async fn connection_write_loop(
     stream: Arc<TcpStream>,
     client_receiver: &mut Receiver<Response>,
@@ -180,9 +194,12 @@ async fn connection_write_loop(
     Ok(())
 }
 
-/// Takes a `Receiver<Option<Event>>` and implements the logic associated with each event.
-/// The `broker()` function starts a connection to the database, and holds client addresses in a `HashMap`.
-/// Whenever a response needs to be sent back to the client, a new write task will be generated.
+/// The main workhorse of the server. Starts a new database connection using `db_dir`, `db_file_name`
+/// and `epic_dir`, receives and processes events using `receiver` and manages disconnecting clients.
+///
+/// # Returns
+///
+/// A `Result<(), DbError>`, the `Ok` variant if successful, otherwise the `Err` variant.
 async fn broker(
     mut receiver: Receiver<Event>,
     db_dir: String,
@@ -304,10 +321,21 @@ async fn broker(
     Ok(())
 }
 
-
+/// A private helper module for the server binary. Breaks up handling logic executed by the broker
+/// into separate functions for the purpose of brevity.
 mod handlers {
     use futures::channel::mpsc::UnboundedSender;
     use super::*;
+
+    /// Handles the event of a new client connecting to the database server.
+    ///
+    /// Adds the client to `clients` and starts a new writing task so that the broker can send responses
+    /// to the new client. This function is also responsible for setting up the synchronization mechanism that
+    /// manages the clients disconnection.
+    ///
+    /// # Returns
+    ///
+    /// A `Result<(), DbError>`, the `Ok` variant if successful, otherwise the `Err` variant.
     pub async fn handle_new_client(
         peer_id: Uuid,
         stream: Arc<TcpStream>,
@@ -603,6 +631,7 @@ mod handlers {
     }
 }
 
+/// The type that represents the command line interface for starting a new server.
 #[derive(Parser)]
 struct Cli {
     /// Absolute path to the directory where the database file is
