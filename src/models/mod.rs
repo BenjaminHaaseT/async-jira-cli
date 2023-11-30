@@ -15,6 +15,7 @@ use std::convert::{AsRef, Into, TryFrom};
 use std::error::Error;
 use std::fmt::Formatter;
 use std::io::{BufRead as StdBufRead, BufReader as StdBufReader, BufWriter as StdBufWriter, ErrorKind as StdErrorKind, Read as StdRead, Seek as StdSeek, Write as StdWrite};
+use tracing::{instrument, event, Level};
 
 use crate::utils::{AsBytes, BytesEncode, TagDecoding, TagEncoding};
 
@@ -70,6 +71,15 @@ impl DbState {
     /// Takes `db_dir`, `db_file_name` and `epic_dir` as parameters and attempts to load the data
     /// stored at those locations into a `DbState` instance. The method can fail if the data saved
     /// was not properly formatted, hence it returns a `Result`.
+    #[instrument(
+    level = Level::INFO,
+    fields(
+        db_dir = %db_dir,
+        db_file_name = %db_file_name,
+        epic_dir = %epic_dir,
+        message = "load database span initiated"
+        )
+    )]
     pub async fn load(
         db_dir: String,
         db_file_name: String,
@@ -81,8 +91,10 @@ impl DbState {
 
         // Load file
         let mut file = if let Ok(f) = OpenOptions::new().read(true).open(root_path.clone()).await {
+            event!(Level::DEBUG, file_path = ?root_path, "handle to file {:?} created successfully", root_path);
             BufReader::new(f)
         } else {
+            event!(Level::ERROR, file_path = ?root_path, "handle to file {:?} was not created successfully", root_path);
             return Err(DbError::FileLoadError(format!(
                 "unable to load file from {}, {}",
                 db_dir, db_file_name
@@ -95,6 +107,8 @@ impl DbState {
 
         let db_file_name_clone = db_file_name.clone();
 
+        event!(Level::DEBUG, "reading from file");
+
         while let Some(line) = lines.next().await {
             let line = line.map_err(|_| {
                 DbError::FileReadError(format!(
@@ -106,6 +120,8 @@ impl DbState {
             let epic = Epic::load(epic_file_path, &mut max_id).await?;
             epics.insert(epic_id, epic);
         }
+
+        event!(Level::DEBUG, "read from file successfully");
 
         Ok(DbState {
             epics,
@@ -121,6 +137,13 @@ impl DbState {
     /// file if an associated db file has not been created, otherwise it will overwrite the
     /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
+    #[instrument(
+        level = Level::INFO,
+        fields(
+            file_path = ?self.file_path,
+            message = "writing to database span initiated"
+        )
+    )]
     pub fn write_sync(&self) -> Result<(), DbError> {
         let mut writer = if let Ok(f) = StdOpenOptions::new()
             .write(true)
@@ -128,13 +151,17 @@ impl DbState {
             .create(true)
             .open(&self.file_path)
         {
+            event!(Level::DEBUG, file_path = ?self.file_path, "handle to file {:?} created successfully", self.file_path);
             StdBufWriter::new(f)
         } else {
+            event!(Level::ERROR, file_path = ?self.file_path, "handle to file {:?} was not created successfully", self.file_path);
             return Err(DbError::FileLoadError(format!(
                 "unable to open/create associated file: {:?}",
                 self.file_path.to_str()
             )));
         };
+
+        event!(Level::DEBUG, "attempting to write to database");
 
         for (id, epic) in &self.epics {
             let epic_file_path_str =
@@ -154,6 +181,8 @@ impl DbState {
             epic.write_sync()?;
         }
 
+        event!(Level::DEBUG, "write successful");
+
         Ok(())
     }
 
@@ -162,6 +191,13 @@ impl DbState {
     /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
     /// This method is the asynchronous version of `DbState::write_sync()`.
+    #[instrument(
+        level = Level::INFO,
+        fields(
+            file_path = ?self.file_path,
+            message = "database write span initiated"
+        )
+    )]
     pub async fn write_async(&self) -> Result<(), DbError> {
         let mut writer = if let Ok(f) = async_std::fs::OpenOptions::new()
             .write(true)
@@ -170,13 +206,17 @@ impl DbState {
             .open(&self.file_path)
             .await
         {
+            event!(Level::DEBUG, file_path = ?self.file_path, "handle to file {:?} created successfully", self.file_path);
             async_std::io::BufWriter::new(f)
         } else {
+            event!(Level::ERROR, file_path = ?self.file_path, "handle to file {:?} was not created successfully", self.file_path);
             return Err(DbError::FileLoadError(format!(
                 "unable to open or create associated file: {:?}",
                 self.file_path.to_str()
             )));
         };
+
+        event!(Level::DEBUG, "attempting to write to database");
 
         for (id, epic) in &self.epics {
             let epic_file_path_str =
@@ -202,6 +242,8 @@ impl DbState {
                 self.db_file_name
             ))
         })?;
+
+        event!(Level::DEBUG, "write successful");
 
         Ok(())
     }
