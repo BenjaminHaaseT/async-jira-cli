@@ -250,6 +250,7 @@ impl DbState {
 
     /// Removes an epic with `id` from the `DbState`. Returns a `Result<Epic, DbError>`,
     /// the `Ok` variant if the delete was successful, otherwise the `Err` variant.
+    #[instrument(level = Level::INFO, err(level = level::INFO), ret)]
     pub fn delete_epic(&mut self, id: u32) -> Result<Epic, DbError> {
         self.epics
             .remove(&id)
@@ -257,6 +258,7 @@ impl DbState {
     }
 
     /// Associated helper function. Handles reading a line of text from the db file.
+    #[instrument(level = Level::INFO, err, ret)]
     fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
         let (id_str, path_str) = match line.find(',') {
             Some(idx) => (&line[..idx], &line[idx + 1..]),
@@ -276,6 +278,8 @@ impl DbState {
 
     /// Method to create a new `Epic` and add it to the `DbState`. Returns a `Result<(), DbError>,
     /// The `Ok` variant if the `Epic` was added successfully, otherwise it returns the `Err` variant.
+    ///
+    #[instrument(ret)]
     pub fn add_epic(&mut self, name: String, description: String) -> u32 {
         self.last_unique_id += 1;
         let id = self.last_unique_id;
@@ -299,23 +303,27 @@ impl DbState {
 
     /// Method to get a mutable reference to an `Epic` contained in the `DbState`, for writing. Returns an `Option<&mut Epic>`.
     /// The `Some` variant if the `Epic` is contained in the `DbState`, otherwise it returns the `None` variant.
+    #[instrument(ret)]
     pub fn get_epic_mut(&mut self, id: u32) -> Option<&mut Epic> {
         self.epics.get_mut(&id)
     }
 
     /// Returns a `bool`, true if the `DbState` contains an `Epic` with `id`, false otherwise
+    #[instrument(ret)]
     pub fn contains_epic(&self, id: u32) -> bool {
         self.epics.contains_key(&id)
     }
 
     /// Method to get a shared reference to an `Epic` contained in the `DbState`. Returns an `Option<&Epic>`.
     /// The `Some` variant if the `Epic` is contained in the `DbState`, otherwise it returns the `None` variant.
+    #[instrument(ret)]
     pub fn get_epic(&self, id: u32) -> Option<&Epic> {
         self.epics.get(&id)
     }
 
     /// Method for adding a new story to `Epic` with `epic_id`. Returns a `Result<(), DbError>`,
     /// The `Ok` variant if `Story` was successfully added otherwise the `Err` variant.
+    #[instrument(ret)]
     pub fn add_story(
         &mut self,
         epic_id: u32,
@@ -340,6 +348,7 @@ impl DbState {
 
     /// Method for deleting a `Story` with `story_id` from `Epic` with `epic_id`. Returns a `Result<u32, DbError>`
     /// the `Ok` variant if the `Story` was successfully deleted, otherwise the `Err` variant.
+    #[instrument(ret, err(level = Level::INFO))]
     pub fn delete_story(&mut self, epic_id: u32, story_id: u32) -> Result<u32, DbError> {
         if !self.epics.contains_key(&epic_id) {
             return Err(DbError::DoesNotExist(format!(
@@ -355,6 +364,7 @@ impl DbState {
 
     /// Method to add a `Story` to an `Epic` contained in `self` with `epic_id`. The method can fail
     ///  if there is no `Epic` contained in `self` with `epic_id`.
+    #[instrument(ret, err)]
     pub async fn add_story_async(
         &mut self,
         epic_id: u32,
@@ -382,6 +392,7 @@ impl DbState {
     }
 
     /// Returns the value of `self.last_unique_id`.
+    #[instrument(ret)]
     pub fn last_unique_id(&self) -> u32 {
         self.last_unique_id
     }
