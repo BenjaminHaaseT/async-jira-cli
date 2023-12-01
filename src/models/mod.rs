@@ -72,12 +72,12 @@ impl DbState {
     /// stored at those locations into a `DbState` instance. The method can fail if the data saved
     /// was not properly formatted, hence it returns a `Result`.
     #[instrument(
-    level = Level::INFO,
+    ret,
+    err,
     fields(
         db_dir = %db_dir,
         db_file_name = %db_file_name,
         epic_dir = %epic_dir,
-        message = "load database span initiated"
         )
     )]
     pub async fn load(
@@ -138,10 +138,10 @@ impl DbState {
     /// contents of the associated file.  Returns a `Result<(), DbError>`
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
     #[instrument(
-        level = Level::INFO,
+        ret,
+        err,
         fields(
-            file_path = ?self.file_path,
-            message = "writing to database span initiated"
+            db = ?self,
         )
     )]
     pub fn write_sync(&self) -> Result<(), DbError> {
@@ -192,10 +192,10 @@ impl DbState {
     /// the `OK` variant if the write was successful, otherwise it returns the `Err` variant.
     /// This method is the asynchronous version of `DbState::write_sync()`.
     #[instrument(
-        level = Level::INFO,
+        ret,
+        err,
         fields(
-            file_path = ?self.file_path,
-            message = "database write span initiated"
+            db = ?self,
         )
     )]
     pub async fn write_async(&self) -> Result<(), DbError> {
@@ -250,7 +250,7 @@ impl DbState {
 
     /// Removes an epic with `id` from the `DbState`. Returns a `Result<Epic, DbError>`,
     /// the `Ok` variant if the delete was successful, otherwise the `Err` variant.
-    #[instrument(level = Level::INFO, err(level = level::INFO), ret)]
+    #[instrument(err(level = Level::INFO), ret, fields(db = ?self))]
     pub fn delete_epic(&mut self, id: u32) -> Result<Epic, DbError> {
         self.epics
             .remove(&id)
@@ -258,7 +258,7 @@ impl DbState {
     }
 
     /// Associated helper function. Handles reading a line of text from the db file.
-    #[instrument(level = Level::INFO, err, ret)]
+    #[instrument(err, ret)]
     fn parse_db_line(line: String) -> Result<(u32, PathBuf), DbError> {
         let (id_str, path_str) = match line.find(',') {
             Some(idx) => (&line[..idx], &line[idx + 1..]),
@@ -279,7 +279,7 @@ impl DbState {
     /// Method to create a new `Epic` and add it to the `DbState`. Returns a `Result<(), DbError>,
     /// The `Ok` variant if the `Epic` was added successfully, otherwise it returns the `Err` variant.
     ///
-    #[instrument(ret)]
+    #[instrument(fields(db = ?self))]
     pub fn add_epic(&mut self, name: String, description: String) -> u32 {
         self.last_unique_id += 1;
         let id = self.last_unique_id;
@@ -303,27 +303,27 @@ impl DbState {
 
     /// Method to get a mutable reference to an `Epic` contained in the `DbState`, for writing. Returns an `Option<&mut Epic>`.
     /// The `Some` variant if the `Epic` is contained in the `DbState`, otherwise it returns the `None` variant.
-    #[instrument(ret)]
+    #[instrument(fields(db = ?self))]
     pub fn get_epic_mut(&mut self, id: u32) -> Option<&mut Epic> {
         self.epics.get_mut(&id)
     }
 
     /// Returns a `bool`, true if the `DbState` contains an `Epic` with `id`, false otherwise
-    #[instrument(ret)]
+    #[instrument(fields(db = ?self))]
     pub fn contains_epic(&self, id: u32) -> bool {
         self.epics.contains_key(&id)
     }
 
     /// Method to get a shared reference to an `Epic` contained in the `DbState`. Returns an `Option<&Epic>`.
     /// The `Some` variant if the `Epic` is contained in the `DbState`, otherwise it returns the `None` variant.
-    #[instrument(ret)]
+    #[instrument(fields(db = ?self))]
     pub fn get_epic(&self, id: u32) -> Option<&Epic> {
         self.epics.get(&id)
     }
 
     /// Method for adding a new story to `Epic` with `epic_id`. Returns a `Result<(), DbError>`,
     /// The `Ok` variant if `Story` was successfully added otherwise the `Err` variant.
-    #[instrument(ret)]
+    #[instrument(fields(db = ?self))]
     pub fn add_story(
         &mut self,
         epic_id: u32,
@@ -348,7 +348,7 @@ impl DbState {
 
     /// Method for deleting a `Story` with `story_id` from `Epic` with `epic_id`. Returns a `Result<u32, DbError>`
     /// the `Ok` variant if the `Story` was successfully deleted, otherwise the `Err` variant.
-    #[instrument(ret, err(level = Level::INFO))]
+    #[instrument(ret, err(level = Level::INFO), fields(db = ?self))]
     pub fn delete_story(&mut self, epic_id: u32, story_id: u32) -> Result<u32, DbError> {
         if !self.epics.contains_key(&epic_id) {
             return Err(DbError::DoesNotExist(format!(
@@ -364,7 +364,7 @@ impl DbState {
 
     /// Method to add a `Story` to an `Epic` contained in `self` with `epic_id`. The method can fail
     ///  if there is no `Epic` contained in `self` with `epic_id`.
-    #[instrument(ret, err)]
+    #[instrument(ret, err, fields(db = ?self))]
     pub async fn add_story_async(
         &mut self,
         epic_id: u32,
@@ -392,13 +392,14 @@ impl DbState {
     }
 
     /// Returns the value of `self.last_unique_id`.
-    #[instrument(ret)]
+    #[instrument(fields(db = ?self))]
     pub fn last_unique_id(&self) -> u32 {
         self.last_unique_id
     }
 }
 
 impl AsBytes for DbState {
+    #[instrument(fields(db = ?self))]
     fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         for (_epic_id, epic) in &self.epics {
@@ -459,11 +460,14 @@ impl Epic {
     /// intended to be the value of a `DbState`s `last_unique_id` to update while loading data, that way the newly created `DbState` will
     /// have a `last_unique_id` that is representative of the data that has been loaded. This method does imply very tight coupling between
     /// the `Epic` struct and the `DbState`, and therefore is not part of `Epic`s public interface.
+    #[instrument(ret, err)]
     async fn load(path: PathBuf, max_id: &mut u32) -> Result<Epic, DbError> {
         // Attempt to open the file
         let mut file = if let Ok(f) = OpenOptions::new().read(true).open(path.clone()).await {
+            event!(Level::DEBUG, file_path = ?path, "handle to file {:?} created successfully", path);
             BufReader::new(f)
         } else {
+            event!(Level::ERROR, file_path = ?path, "handle to file {:?} was not created successfully", path);
             return Err(DbError::FileLoadError(format!(
                 "unable to load file {:?}",
                 path.to_str()
@@ -471,6 +475,7 @@ impl Epic {
         };
 
         // Read the bytes for the epic tag
+        event!(Level::DEBUG, file_path = ?path, "reading epic from file handle");
         let mut epic_tag = [0_u8; 13];
         file.read_exact(&mut epic_tag).await.map_err(|_e| {
             DbError::FileReadError(format!("unable to read file {:?}", path.to_str()))
@@ -505,6 +510,9 @@ impl Epic {
             .map_err(|_e| DbError::ParseError(format!("unable to parse epic: {id} name")))?;
         let epic_description = String::from_utf8(epic_description_bytes)
             .map_err(|_e| DbError::ParseError(format!("unable to parse epic: {id} description")))?;
+
+        event!(Level::DEBUG, epic.name = %epic_name, epic.description = %epic_description, "read epic successfully from file");
+        event!(Level::DEBUG, file_path = ?path, "reading stories from {:?}", path);
 
         // Create stories hashmap and tag for the current story if any
         let mut stories = HashMap::new();
@@ -565,9 +573,13 @@ impl Epic {
             *max_id = u32::max(*max_id, story_id);
         }
 
+        event!(Level::DEBUG, file_path = ?path, "read stories successfully from {:?}", path);
+
         // Create the Epic and return the result
         let epic_status = Status::try_from(status_byte)?;
         let epic = Epic::new(id, epic_name, epic_description, epic_status, path, stories);
+
+        event!(Level::DEBUG, epic = ?epic, "created epic successfully");
         *max_id = u32::max(id, *max_id);
         Ok(epic)
     }
@@ -575,6 +587,7 @@ impl Epic {
     /// Writes the `Epic` to the file it is associated with, creates a new file if an associated
     /// file does not exist. The method can fail for various reasons, the file not being valid for example,
     /// and so the return value is a `Result`. `Ok` in the successful case and `Err` in the unsuccessful case.
+    #[instrument(ret, err, fields(epic = ?self))]
     pub fn write_sync(&self) -> Result<(), DbError> {
         // Attempt to open file
         let mut writer = if let Ok(f) = StdOpenOptions::new()
@@ -583,6 +596,7 @@ impl Epic {
             .truncate(true)
             .open::<&Path>(self.file_path.as_ref())
         {
+            event!(Level::DEBUG, file_path = ?self.file_path, "handle to file {:?} created successfully", self.file_path);
             StdBufWriter::new(f)
         } else {
             return Err(DbError::FileLoadError(format!(
@@ -592,6 +606,7 @@ impl Epic {
         };
 
         // Encode the tag of `self` and write epic data to file
+        event!(Level::DEBUG, epic = ?self, "writing epic contents to file");
         let epic_tag = self.encode();
         writer.write_all(&epic_tag).map_err(|_e| {
             DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id))
@@ -607,6 +622,9 @@ impl Epic {
                     self.id
                 ))
             })?;
+
+        event!(Level::DEBUG, epic = ?self, "epic contents written successfully");
+        event!(Level::DEBUG, epic = ?self, "writing stories to file");
 
         // Now write stories to file
         for (story_id, story) in &self.stories {
@@ -630,6 +648,8 @@ impl Epic {
                 })?;
         }
 
+        event!(Level::DEBUG, epic = ?self, "stories written to file successfully");
+
         Ok(())
     }
 
@@ -637,6 +657,7 @@ impl Epic {
     /// file does not exist. The method can fail for various reasons, the file not being valid for example,
     /// and so the return value is a `Result`. `Ok` in the successful case and `Err` in the unsuccessful case.
     /// The method is essentially the asynchronous version of `Epic::write_sync()`.
+    #[instrument(ret, err, fields(epic = ?self))]
     pub async fn write_async(&self) -> Result<(), DbError> {
         let mut writer = if let Ok(f) = OpenOptions::new()
             .write(true)
@@ -645,6 +666,7 @@ impl Epic {
             .open::<&Path>(self.file_path.as_ref())
             .await
         {
+            event!(Level::DEBUG, file_path = ?self.file_path, "handle to file {:?} created successfully", self.file_path);
             BufWriter::new(f)
         } else {
             return Err(DbError::FileLoadError(format!(
@@ -654,6 +676,8 @@ impl Epic {
         };
 
         // Encode the tag of `self` and write epic data to file
+        event!(Level::DEBUG, epic = ?self, "writing epic contents to file");
+
         let epic_tag = self.encode();
         writer.write_all(&epic_tag).await.map_err(|_e| {
             DbError::FileWriteError(format!("unable to write epic: {} tag to file", self.id))
@@ -670,6 +694,9 @@ impl Epic {
                     self.id
                 ))
             })?;
+
+        event!(Level::DEBUG, epic = ?self, "epic contents written successfully");
+        event!(Level::DEBUG, epic = ?self, "writing stories to file");
 
         // Now write stories to file
         for (story_id, story) in &self.stories {
@@ -704,11 +731,14 @@ impl Epic {
             ))
         })?;
 
+        event!(Level::DEBUG, epic = ?self, "stories written to file successfully");
+
         Ok(())
     }
 
     /// Adds a new story to the `Epic`. Returns a `Result<(), DbError>`, the `Ok` variant if successful,
     /// and `Err` variant if unsuccessful.
+    #[instrument(ret, err(level = Level::INFO), fields(epic = ?self))]
     pub fn add_story(&mut self, story: Story) -> Result<(), DbError> {
         if self.stories.contains_key(&story.id) {
             return Err(DbError::IdConflict(format!(
@@ -722,12 +752,14 @@ impl Epic {
     }
 
     /// Updates the status of `Epic`.
+    #[instrument(fields(epic = ?self))]
     pub fn update_status(&mut self, status: Status) {
         self.status = status;
     }
 
     /// Deletes a story from the `Epic`. Returns a `Result<(), DbError>`, the `Ok` variant if successful,
     /// and `Err` variant if unsuccessful.
+    #[instrument(ret, err(level = Level::INFO), fields(epic = ?self))]
     pub fn delete_story(&mut self, story_id: u32) -> Result<u32, DbError> {
         if !self.stories.contains_key(&story_id) {
             return Err(DbError::DoesNotExist(format!(
@@ -742,6 +774,7 @@ impl Epic {
 
     /// Method for updating a stories status. Returns `Result<(), DbError>`, the `Ok` variant if successful,
     /// and `Err` variant if unsuccessful.
+    #[instrument(ret, err(level = Level::INFO), fields(epic = ?self))]
     pub fn update_story_status(&mut self, story_id: u32, status: Status) -> Result<(), DbError> {
         if !self.stories.contains_key(&story_id) {
             Err(DbError::DoesNotExist(format!(
@@ -756,32 +789,38 @@ impl Epic {
 
     /// Returns an `Option<&Story>`. If `self` contains a story with id `story_id` then the `Some` variant is returned,
     /// otherwise the `None` variant is returned.
+    #[instrument(fields(epic = ?self))]
     pub fn get_story(&self, story_id: u32) -> Option<&Story> {
         self.stories.get(&story_id)
     }
 
     /// Returns the id of `self.
+    #[instrument(fields(epic = ?self))]
     pub fn id(&self) -> u32 {
         self.id
     }
 
     /// Returns a shared reference to the name of `self`.
+    #[instrument(fields(epic = ?self))]
     pub fn name(&self) -> &String {
         &self.name
     }
 
     /// Returns a shared reference to the description of `self`.
+    #[instrument(fields(epic = ?self))]
     pub fn description(&self) -> &String {
         &self.description
     }
 
     /// Returns the status of `self`.
+    #[instrument(fields(epic = ?self))]
     pub fn status(&self) -> Status {
         self.status
     }
 }
 
 impl AsBytes for Epic {
+    #[instrument[fields(epic = ?self)]]
     fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         bytes.extend_from_slice(&self.encode());
