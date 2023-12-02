@@ -6,6 +6,7 @@ use futures::channel::mpsc::UnboundedReceiver;
 use std::sync::Arc;
 use std::marker::Unpin;
 use uuid::Uuid;
+use tracing::{instrument, event, Level};
 
 pub mod prelude {
     pub use super::*;
@@ -79,6 +80,7 @@ pub enum Event {
 impl Event {
     /// Associated method that attempts to create a new `Event` given `client_id`, `tag` and `stream`.
     /// Is fallible, and hence returns a `Result<Event, DbError>`.
+    #[instrument(ret, err, name = "try create event")]
     pub async fn try_create<R: ReadExt + Unpin>(
         client_id: Uuid,
         tag: &[u8; 13],
@@ -86,20 +88,28 @@ impl Event {
     ) -> Result<Event, DbError> {
         let event_byte = tag[0];
         if event_byte & 1 != 0 {
+            event!(Level::INFO, event_byte = event_byte, "attempting to create an AddEpic variant");
             Event::try_create_add_epic(client_id, tag, stream).await
         } else if event_byte & 2 != 0 {
+            event!(Level::INFO,  event_byte = event_byte, "attempting to create a DeleteEpic variant");
             Event::try_create_delete_epic(client_id, tag).await
         } else if event_byte & 4 != 0 {
+            event!(Level::INFO,  event_byte = event_byte, "attempting to create a GetEpic variant");
             Event::try_create_get_epic(client_id, tag).await
         } else if event_byte & 8 != 0 {
+            event!(Level::INFO,  event_byte = event_byte, "attempting to create UpdateEpicStatus variant");
             Event::try_create_update_epic_status(client_id, tag).await
         } else if event_byte & 16 != 0 {
+            event!(Level::INFO,  event_byte = event_byte, "attempting to create GetStory variant");
             Event::try_create_get_story(client_id, tag).await
         } else if event_byte & 32 != 0 {
+            event!(Level::INFO,  event_byte = event_byte, "attempting to create AddStory variant");
             Event::try_create_add_story(client_id, tag, stream).await
         } else if event_byte & 64 != 0 {
+            event!(Level::INFO,  event_byte = event_byte, "attempting to create DeleteStory variant");
             Event::try_create_delete_story(client_id, tag).await
         } else if event_byte & 128 != 0 {
+            event!(Level::INFO,  event_byte = event_byte, "attempting to create UpdateStoryStatus variant");
             Event::try_create_update_story_status(client_id, tag).await
         } else {
             Err(DbError::DoesNotExist(format!(
@@ -109,6 +119,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `AddEpic` variant.
+
     pub async fn try_create_add_epic<R: ReadExt + Unpin>(
         client_id: Uuid,
         tag: &[u8; 13],
