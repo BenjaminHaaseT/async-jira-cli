@@ -841,7 +841,7 @@ impl BytesEncode for Epic {
         encoded_bytes
     }
 
-    #[instrument(name = "deserializing epic tag", fields(epic = ?self))]
+    #[instrument(name = "deserializing epic tag")]
     fn decode(tag: &Self::Tag) -> Self::DecodedTag {
         // decode id
         let mut id = 0_u32;
@@ -970,7 +970,7 @@ impl BytesEncode for Story {
         encoded_bytes
     }
 
-    #[instrument(name = "deserializing story tag", fields(story = ?self))]
+    #[instrument(name = "deserializing story tag")]
     fn decode(tag: &Self::Tag) -> Self::DecodedTag {
         let mut id = 0;
         for i in 0..4 {

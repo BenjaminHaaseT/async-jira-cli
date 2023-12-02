@@ -136,6 +136,7 @@ impl BytesEncode for Response {
 
     type DecodedTag = ResponseDecodeTag;
 
+    #[instrument(name = "serializing response tag", fields(response = ?self))]
     fn encode(&self) -> Self::Tag {
         let mut encoded_tag = [0u8; 18];
         match self {
@@ -231,6 +232,7 @@ impl BytesEncode for Response {
         }
     }
 
+    #[instrument(name = "deserializing response tag")]
     fn decode(tag: &Self::Tag) -> Self::DecodedTag {
         let mut type_and_flag_bytes = 0u16;
         let mut epic_id = 0u32;
