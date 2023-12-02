@@ -821,6 +821,7 @@ unsafe impl Sync for Epic {}
 impl BytesEncode for Epic {
     type Tag = EpicEncodeTag;
     type DecodedTag = EpicDecodeTag;
+    #[instrument(name = "serializing epic tag", fields(epic = ?self))]
     fn encode(&self) -> Self::Tag {
         let mut encoded_bytes = [0_u8; 13];
 
@@ -840,6 +841,7 @@ impl BytesEncode for Epic {
         encoded_bytes
     }
 
+    #[instrument(name = "deserializing epic tag", fields(epic = ?self))]
     fn decode(tag: &Self::Tag) -> Self::DecodedTag {
         // decode id
         let mut id = 0_u32;
@@ -944,6 +946,7 @@ impl BytesEncode for Story {
 
     type DecodedTag = StoryDecodeTag;
 
+    #[instrument(name = "serializing story tag", fields(story = ?self))]
     fn encode(&self) -> Self::Tag {
         let mut encoded_bytes = [0_u8; 17];
         for i in 0..4 {
@@ -967,6 +970,7 @@ impl BytesEncode for Story {
         encoded_bytes
     }
 
+    #[instrument(name = "deserializing story tag", fields(story = ?self))]
     fn decode(tag: &Self::Tag) -> Self::DecodedTag {
         let mut id = 0;
         for i in 0..4 {
