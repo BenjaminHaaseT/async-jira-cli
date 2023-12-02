@@ -2,12 +2,14 @@
 use crate::models::DbError;
 use crate::utils::{parse_4_bytes, AsBytes, BytesEncode, TagDecoding, TagEncoding};
 use async_std::net::TcpStream;
+use tracing::instrument;
 
 pub mod prelude {
     pub use super::*;
 }
 
 /// A response to an `Event` sent by a client.
+#[derive(Debug)]
 pub enum Response {
     /// Response for a successful client connection, holds the database
     /// `Epics` encoded in a `Vec<u8`
@@ -96,6 +98,7 @@ impl Response {
 
 impl AsBytes for Response {
     /// Converts `Response` into a serialized vector of bytes.
+    #[instrument(name = "response as bytes", fields(response = ?self))]
     fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         bytes.extend_from_slice(&self.encode());
