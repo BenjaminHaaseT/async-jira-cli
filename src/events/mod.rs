@@ -80,7 +80,7 @@ pub enum Event {
 impl Event {
     /// Associated method that attempts to create a new `Event` given `client_id`, `tag` and `stream`.
     /// Is fallible, and hence returns a `Result<Event, DbError>`.
-    #[instrument(ret, err, name = "try create event")]
+    #[instrument(ret, err, name = "try_create_event", skip(stream))]
     pub async fn try_create<R: ReadExt + Unpin>(
         client_id: Uuid,
         tag: &[u8; 13],
@@ -88,28 +88,28 @@ impl Event {
     ) -> Result<Event, DbError> {
         let event_byte = tag[0];
         if event_byte & 1 != 0 {
-            event!(Level::INFO, event_byte = event_byte, "attempting to create an AddEpic variant");
+            event!(Level::INFO, event_byte = event_byte);
             Event::try_create_add_epic(client_id, tag, stream).await
         } else if event_byte & 2 != 0 {
-            event!(Level::INFO,  event_byte = event_byte, "attempting to create a DeleteEpic variant");
+            event!(Level::INFO,  event_byte = event_byte);
             Event::try_create_delete_epic(client_id, tag).await
         } else if event_byte & 4 != 0 {
-            event!(Level::INFO,  event_byte = event_byte, "attempting to create a GetEpic variant");
+            event!(Level::INFO,  event_byte = event_byte);
             Event::try_create_get_epic(client_id, tag).await
         } else if event_byte & 8 != 0 {
-            event!(Level::INFO,  event_byte = event_byte, "attempting to create UpdateEpicStatus variant");
+            event!(Level::INFO,  event_byte = event_byte);
             Event::try_create_update_epic_status(client_id, tag).await
         } else if event_byte & 16 != 0 {
-            event!(Level::INFO,  event_byte = event_byte, "attempting to create GetStory variant");
+            event!(Level::INFO,  event_byte = event_byte);
             Event::try_create_get_story(client_id, tag).await
         } else if event_byte & 32 != 0 {
-            event!(Level::INFO,  event_byte = event_byte, "attempting to create AddStory variant");
+            event!(Level::INFO,  event_byte = event_byte);
             Event::try_create_add_story(client_id, tag, stream).await
         } else if event_byte & 64 != 0 {
-            event!(Level::INFO,  event_byte = event_byte, "attempting to create DeleteStory variant");
+            event!(Level::INFO,  event_byte = event_byte);
             Event::try_create_delete_story(client_id, tag).await
         } else if event_byte & 128 != 0 {
-            event!(Level::INFO,  event_byte = event_byte, "attempting to create UpdateStoryStatus variant");
+            event!(Level::INFO,  event_byte = event_byte);
             Event::try_create_update_story_status(client_id, tag).await
         } else {
             Err(DbError::DoesNotExist(format!(
@@ -119,7 +119,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `AddEpic` variant.
-
+    #[instrument(ret, err, skip(stream))]
     pub async fn try_create_add_epic<R: ReadExt + Unpin>(
         client_id: Uuid,
         tag: &[u8; 13],
@@ -128,8 +128,12 @@ impl Event {
         let mut stream = stream;
         let epic_name_len = parse_4_bytes(&tag[1..5]);
         let epic_description_len = parse_4_bytes(&tag[5..9]);
+
         let mut epic_name_bytes = vec![0u8; epic_name_len as usize];
         let mut epic_description_bytes = vec![0u8; epic_description_len as usize];
+
+        event!(Level::INFO, epic_name_len, epic_description_len, "attempting to read epic bytes from stream");
+
         stream.read_exact(&mut epic_name_bytes).await.map_err(|_| {
             DbError::ParseError(format!("unable to read epic name bytes from stream"))
         })?;
@@ -141,6 +145,9 @@ impl Event {
                     "unable to parse epic description bytes from stream"
                 ))
             })?;
+
+        event!(Level::INFO, epic_name_bytes = ?epic_name_bytes, epic_description_bytes = ?epic_description_bytes, "read bytes from stream successfully");
+
         let epic_name = String::from_utf8(epic_name_bytes).map_err(|_| {
             DbError::ParseError(format!("unable to parse epic name as well formed utf8"))
         })?;
@@ -149,6 +156,14 @@ impl Event {
                 "unable to parse epic description as well formed utf8"
             ))
         })?;
+
+        event!(
+            Level::INFO,
+            epic_name,
+            epic_description,
+            "parsed epic bytes successfully"
+        );
+
         Ok(Event::AddEpic {
             peer_id: client_id,
             epic_name,
@@ -157,6 +172,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `DeleteEpic` variant.
+    #[instrument(ret, err)]
     pub async fn try_create_delete_epic(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         Ok(Event::DeleteEpic {
@@ -166,6 +182,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `GetEpic` variant.
+    #[instrument(ret, err)]
     pub async fn try_create_get_epic(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         Ok(Event::GetEpic {
@@ -175,6 +192,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `UpdateEpicStatus` variant.
+    #[instrument(ret, err)]
     pub async fn try_create_update_epic_status(
         client_id: Uuid,
         tag: &[u8; 13],
@@ -190,6 +208,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `GetStory` variant.
+    #[instrument(ret, err)]
     pub async fn try_create_get_story(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         let story_id = parse_4_bytes(&tag[5..9]);
@@ -201,6 +220,8 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `AddStory` variant.
+    ///
+    #[instrument(ret, err, skip(stream))]
     pub async fn try_create_add_story<R: ReadExt + Unpin>(
         client_id: Uuid,
         tag: &[u8; 13],
@@ -212,6 +233,9 @@ impl Event {
         let story_description_len = parse_4_bytes(&tag[9..]) as usize;
         let mut story_name_bytes = vec![0u8; story_name_len];
         let mut story_description_bytes = vec![0u8; story_description_len];
+
+        event!(Level::INFO, epic_id, story_name_len, story_description_len, "attempting to read story bytes from stream");
+
         stream
             .read_exact(&mut story_name_bytes)
             .await
@@ -226,6 +250,13 @@ impl Event {
                     "unable to ready story description bytes from stream"
                 ))
             })?;
+
+        event!(
+            Level::INFO,
+            story_name_bytes = ?story_name_bytes,
+            story_description_bytes = ?story_description_bytes,
+            "read story bytes from stream successfully"
+        );
         let story_name = String::from_utf8(story_name_bytes).map_err(|_| {
             DbError::ParseError(format!("unable to read story name as well formed utf8"))
         })?;
@@ -234,6 +265,9 @@ impl Event {
                 "unable to read story description bytes as well formed utf8"
             ))
         })?;
+
+        event!(Level::INFO, story_name, story_description, "parsed story bytes successfully");
+
         Ok(Event::AddStory {
             peer_id: client_id,
             epic_id,
@@ -243,6 +277,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `DeleteStory` variant.
+    #[instrument(ret, err)]
     pub async fn try_create_delete_story(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         let story_id = parse_4_bytes(&tag[5..9]);
@@ -254,6 +289,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `UpdateStoryStatus` variant.
+    #[instrument(ret, err)]
     pub async fn try_create_update_story_status(
         client_id: Uuid,
         tag: &[u8; 13],
