@@ -80,7 +80,7 @@ pub enum Event {
 impl Event {
     /// Associated method that attempts to create a new `Event` given `client_id`, `tag` and `stream`.
     /// Is fallible, and hence returns a `Result<Event, DbError>`.
-    #[instrument(ret, err, name = "try_create_event", skip(stream))]
+    #[instrument(ret, err, name = "try create event", skip(stream))]
     pub async fn try_create<R: ReadExt + Unpin>(
         client_id: Uuid,
         tag: &[u8; 13],
@@ -119,7 +119,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `AddEpic` variant.
-    #[instrument(ret, err, skip(stream))]
+    #[instrument(ret, err, skip(stream), name = "try create add epic")]
     pub async fn try_create_add_epic<R: ReadExt + Unpin>(
         client_id: Uuid,
         tag: &[u8; 13],
@@ -172,7 +172,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `DeleteEpic` variant.
-    #[instrument(ret, err)]
+    #[instrument(ret, err, name = "try create delete epic")]
     pub async fn try_create_delete_epic(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         Ok(Event::DeleteEpic {
@@ -182,7 +182,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `GetEpic` variant.
-    #[instrument(ret, err)]
+    #[instrument(ret, err, name = "try create get epic")]
     pub async fn try_create_get_epic(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         Ok(Event::GetEpic {
@@ -192,7 +192,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `UpdateEpicStatus` variant.
-    #[instrument(ret, err)]
+    #[instrument(ret, err, name = "try create update epic status")]
     pub async fn try_create_update_epic_status(
         client_id: Uuid,
         tag: &[u8; 13],
@@ -208,7 +208,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `GetStory` variant.
-    #[instrument(ret, err)]
+    #[instrument(ret, err, name = "try create get story")]
     pub async fn try_create_get_story(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         let story_id = parse_4_bytes(&tag[5..9]);
@@ -221,7 +221,7 @@ impl Event {
 
     /// Helper method for `try_create`. Attempts to create a `AddStory` variant.
     ///
-    #[instrument(ret, err, skip(stream))]
+    #[instrument(ret, err, skip(stream), name = "try create add story")]
     pub async fn try_create_add_story<R: ReadExt + Unpin>(
         client_id: Uuid,
         tag: &[u8; 13],
@@ -277,7 +277,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `DeleteStory` variant.
-    #[instrument(ret, err)]
+    #[instrument(ret, err, name = "try create delete story")]
     pub async fn try_create_delete_story(client_id: Uuid, tag: &[u8; 13]) -> Result<Event, DbError> {
         let epic_id = parse_4_bytes(&tag[1..5]);
         let story_id = parse_4_bytes(&tag[5..9]);
@@ -289,7 +289,7 @@ impl Event {
     }
 
     /// Helper method for `try_create`. Attempts to create a `UpdateStoryStatus` variant.
-    #[instrument(ret, err)]
+    #[instrument(ret, err, name = "try create update story status")]
     pub async fn try_create_update_story_status(
         client_id: Uuid,
         tag: &[u8; 13],
