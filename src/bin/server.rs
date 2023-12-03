@@ -133,7 +133,7 @@ async fn connection_loop(
 
     // Create custom id for new client
     let client_id = Uuid::new_v4();
-    event!(Level::INFO, client_stream = ?client_stream, client_id, "client connection received id");
+    event!(Level::INFO, client_stream = ?client_stream, client_id = ?client_id, "client connection received id");
 
     // Create a new client and send to broker
     let new_client = Event::NewClient {
@@ -143,7 +143,7 @@ async fn connection_loop(
     };
 
     broker_sender.send(new_client).await.unwrap();
-    event!(Level::INFO, client_id, "sent new client event to broker task");
+    event!(Level::INFO, client_id = ?client_id, "sent new client event to broker task");
 
     let mut tag = [0u8; 13];
 
@@ -152,11 +152,11 @@ async fn connection_loop(
             Ok(event) => {
 
                 broker_sender.send(event).await.unwrap();
-                event!(Level::INFO, client_id, "sent event to client");
+                event!(Level::INFO, client_id = ?client_id, "sent event to client");
             }
             // We were unable to parse a valid event from the clients stream,
             Err(e) => {
-                event!(Level::ERROR, error = %e, client_id, "unable to parse event from client");
+                event!(Level::ERROR, error = %e, client_id = ?client_id, "unable to parse event from client");
                 broker_sender
                     .send(Event::UnparseableEvent {
                         peer_id: client_id.clone(),
