@@ -16,14 +16,13 @@ use futures::{FutureExt, Stream, StreamExt};
 use uuid::Uuid;
 use clap::Parser;
 use futures::stream::FusedStream;
+use tracing::{instrument, Level, event};
 
 
 use async_jira_cli::events::prelude::*;
 use async_jira_cli::models::prelude::*;
 use async_jira_cli::response::prelude::*;
 use async_jira_cli::utils::{AsBytes, Void};
-
-//TODO: set up logging/tracing of errors
 
 /// Helper function that will take a future, spawn it as a new task and log any errors propagated from the spawned future.
 async fn spawn_and_log_errors(
@@ -53,7 +52,8 @@ fn log_connection_error(result: Result<(), SendError>, peer_id: Uuid) -> bool {
     }
 }
 
-/// Accepts a `addrs` representing a socket address that will listen for incoming connections,
+/// Loop that accepts incoming client connections.
+/// Accepts an address, `addrs` representing a socket address that will listen for incoming connections,
 /// and a `channel_buf_size` representing the capacity of channel that connects to the broker task.
 /// The function will start a new listener awaiting for incoming connections from clients, it then starts
 /// a new broker task, and then passes each client connection to a separate connection task.
@@ -61,6 +61,7 @@ fn log_connection_error(result: Result<(), SendError>, peer_id: Uuid) -> bool {
 /// # Returns
 ///
 /// A `Result<(), DbError>`, the `Ok` variant if no errors occurred, otherwise `Err`.
+#[instrument(ret, err)]
 async fn accept_loop(
     addrs: impl ToSocketAddrs + Debug + Clone,
     channel_buf_size: usize,
@@ -70,11 +71,15 @@ async fn accept_loop(
 ) -> Result<(), DbError> {
     // Connect to the servers socket address
     println!("listening at {:?}...", addrs);
+    event!(Level::DEBUG, address = ?addrs, "listening at {:?}", addrs);
+
     let addrs_clone = addrs.clone();
-    let listener = TcpListener::bind(addrs).await.map_err(|_e| {
+    let listener = TcpListener::bind(addrs.clone()).await.map_err(|_e| {
         DbError::ConnectionError(format!("could not connect to {:?}", addrs_clone))
     })?;
 
+    event!(Level::INFO, address = ?addrs, "successfully bound listener to address");
+    event!(Level::INFO, "spawning broker task");
     // Get a channel to the broker, and spawn the brokers task
     let (broker_sender, broker_receiver) = mpsc::channel::<Event>(channel_buf_size);
     let broker_handle = task::spawn(broker(
@@ -84,23 +89,25 @@ async fn accept_loop(
         epic_dir,
         channel_buf_size,
     ));
-
+    event!(Level::INFO, "accepting incoming connections");
     while let Some(stream_res) = listener.incoming().next().await {
-        println!("accepting: {:?}", stream_res);
+        event!(Level::INFO, stream = ?stream_res, "accepting stream");
         let stream = stream_res
             .map_err(|_e| DbError::ConnectionError(String::from("unable accept incoming client stream")))?;
-        // let f = spawn_and_log_errors(connection_loop(stream, broker_sender.clone()));
+        event!(Level::INFO, stream = ?stream, "spawning connection loop for stream");
         let broker_sender_clone = broker_sender.clone();
         task::spawn(async move {
             if let Err(e) = connection_loop(stream, broker_sender_clone).await {
-                eprintln!("{e}");
+                event!(Level::ERROR, error = %e, "error from connection loop task");
             }
         });
     }
+    event!(Level::INFO, "initiating graceful shutdown");
     // Drop the broker's sender
     drop(broker_sender);
     // Await the result from the broker's task
     broker_handle.await?;
+    event!(Level::INFO, "graceful shutdown achieved without errors");
     Ok(())
 }
 
@@ -113,11 +120,12 @@ async fn accept_loop(
 /// # Returns
 ///
 /// A `Result<(), DbError>`, the `Ok` variant if successful, otherwise `Err`.
+#[instrument(ret, err)]
 async fn connection_loop(
     client_stream: TcpStream,
     mut broker_sender: Sender<Event>,
 ) -> Result<(), DbError> {
-    println!("Inside connection loop");
+    event!(Level::DEBUG, client_stream = ?client_stream, "started connection loop task for client");
     let client_stream = Arc::new(client_stream);
     let mut client_stream_reader = &*client_stream;
 
@@ -125,6 +133,7 @@ async fn connection_loop(
 
     // Create custom id for new client
     let client_id = Uuid::new_v4();
+    event!(Level::INFO, client_stream = ?client_stream, client_id, "client connection received id");
 
     // Create a new client and send to broker
     let new_client = Event::NewClient {
@@ -132,19 +141,22 @@ async fn connection_loop(
         stream: client_stream.clone(),
         shutdown: shutdown_receiver,
     };
-    println!("{}", broker_sender.is_closed());
+
     broker_sender.send(new_client).await.unwrap();
+    event!(Level::INFO, client_id, "sent new client event to broker task");
 
     let mut tag = [0u8; 13];
 
     while let Ok(_) = client_stream_reader.read_exact(&mut tag).await {
         match Event::try_create(client_id.clone(), &tag, client_stream_reader).await {
             Ok(event) => {
-                println!("sent broker event");
+
                 broker_sender.send(event).await.unwrap();
+                event!(Level::INFO, client_id, "sent event to client");
             }
             // We were unable to parse a valid event from the clients stream,
-            Err(_e) => {
+            Err(e) => {
+                event!(Level::ERROR, error = %e, client_id, "unable to parse event from client");
                 broker_sender
                     .send(Event::UnparseableEvent {
                         peer_id: client_id.clone(),
