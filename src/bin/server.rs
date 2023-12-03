@@ -142,7 +142,10 @@ async fn connection_loop(
         shutdown: shutdown_receiver,
     };
 
-    broker_sender.send(new_client).await.unwrap();
+    broker_sender.send(new_client)
+        .await
+        .map_err(|_e| DbError::ConnectionError(format!("client {:?} unable to send event to broker task, broker task should be connected", client_id)))?;
+
     event!(Level::INFO, client_id = ?client_id, "sent new client event to broker task");
 
     let mut tag = [0u8; 13];
@@ -151,7 +154,9 @@ async fn connection_loop(
         match Event::try_create(client_id.clone(), &tag, client_stream_reader).await {
             Ok(event) => {
 
-                broker_sender.send(event).await.unwrap();
+                broker_sender.send(event)
+                    .await
+                    .map_err(|_e| DbError::ConnectionError(format!("client {:?} unable to send event to broker task, broker task should be connected", client_id)))?;
                 event!(Level::INFO, client_id = ?client_id, "sent event to client");
             }
             // We were unable to parse a valid event from the clients stream,
@@ -162,7 +167,7 @@ async fn connection_loop(
                         peer_id: client_id.clone(),
                     })
                     .await
-                    .unwrap();
+                    .map_err(|_e| DbError::ConnectionError(format!("client {:?} unable to send event to broker task, broker task should be connected", client_id)))?;
             }
         }
     }
