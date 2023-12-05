@@ -389,6 +389,7 @@ mod handlers {
     /// # Returns
     ///
     /// A `Result<(), DbError>`, the `Ok` variant if successful, otherwise the `Err` variant.
+    #[instrument(ret, err)]
     pub async fn handle_new_client(
         peer_id: Uuid,
         stream: Arc<TcpStream>,
@@ -399,34 +400,45 @@ mod handlers {
         db_handle: &mut DbState,
     ) -> Result<(), DbError> {
         if !clients.contains_key(&peer_id) {
+
             let (mut client_sender, mut client_receiver) =
                 mpsc::channel::<Response>(channel_buf_size);
 
             clients.insert(peer_id, client_sender.clone());
+            event!(Level::INFO, peer_id = ?peer_id, "new client with id {} added to client map successfully", peer_id);
             let mut disconnect_sender = disconnect_sender.clone();
 
+            event!(Level::INFO, peer_id = ?peer_id, "spawning new connection_write_loop task for client {}", peer_id);
             let _ = task::spawn(async move {
                 let res = connection_write_loop(stream, &mut client_receiver, shutdown, peer_id).await;
                 let _ = disconnect_sender.send((peer_id, client_receiver)).await;
                 if let Err(e) = res {
-                    eprintln!("{e}");
+                    event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error received from client {} connection_write_loop task", peer_id);
                     Err(e)
                 } else {
                     Ok(())
                 }
             });
 
-            let _ = log_connection_error(
-                client_sender
-                    .send(Response::ClientAddedOk(db_handle.as_bytes()))
-                    .await,
-                peer_id,
-            );
+            // Log error if one occurs
+            if let Err(e) = client_sender.send(Response::ClientAddedOk(db_handle.as_bytes())).await {
+                event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+            } else {
+                event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
+            }
         } else {
+            // This branch should not happen, therefore we need to return an 'Err'
+            let error = DbError::IdConflict(format!("client with id {} already exists", peer_id));
+            event!(Level::ERROR,  error = ?error , "client id collision detected");
+
             let mut client_sender = clients.get_mut(&peer_id).unwrap();
-            let _ = log_connection_error(client_sender.send(Response::ClientAlreadyExists).await, peer_id);
-            // TODO: Log errors, instead of writing to stderr
-            eprintln!("error: client already exists");
+            if let Err(e) = client_sender.send(Response::ClientAlreadyExists).await {
+                event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+            } else {
+                event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
+            }
+
+            return Err(error);
         }
         Ok(())
     }
