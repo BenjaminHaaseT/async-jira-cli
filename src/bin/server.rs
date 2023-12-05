@@ -283,6 +283,7 @@ async fn broker(
                 stream,
                 shutdown,
             } => {
+                event!(Level::INFO, peer_id, "received 'NewClient' event from client {}", peer_id);
                 handlers::handle_new_client(peer_id, stream, shutdown, &mut clients, &disconnect_sender, channel_buf_size, &mut db_handle).await?;
             }
             // Adds an epic to the db_handle, and writes it to the database
@@ -291,14 +292,17 @@ async fn broker(
                 epic_name,
                 epic_description,
             } => {
+                event!(Level::INFO, peer_id, epic_name, epic_description, "received 'AddEpic' event from client {}", peer_id);
                 handlers::add_epic_handler(peer_id, epic_name, epic_description, &mut clients, &mut db_handle).await?;
             }
             // Deletes an epic from the db_handle, writes changes to the database
             Event::DeleteEpic { peer_id, epic_id } => {
+                event!(Level::INFO, peer_id, epic_id, "received 'DeleteEpic' event from client {}", peer_id);
                 handlers::delete_epic_handler(peer_id, epic_id, &mut clients, &mut db_handle).await?;
             }
             // Gets an epics information from the database
             Event::GetEpic { peer_id, epic_id } => {
+                event!(Level::INFO, peer_id, epic_id, "received 'GetEpic' event from client {}", peer_id);
                 handlers::get_epic_handler(peer_id, epic_id, &mut clients, &mut db_handle).await?;
             }
             // Update the status of an epic in the database
@@ -307,6 +311,7 @@ async fn broker(
                 epic_id,
                 status,
             } => {
+                event!(Level::INFO, peer_id, epic_id, status, "received 'UpdateEpicStatus' event from client {}", peer_id);
                 handlers::update_epic_status_handler(peer_id, epic_id, status, &mut clients, &mut db_handle).await?;
             }
             // Gets a story from the database
@@ -315,6 +320,7 @@ async fn broker(
                 epic_id,
                 story_id,
             } => {
+                event!(Level::INFO, peer_id, epic_id, story_id, "received 'GetStory' event from client {}", peer_id);
                 handlers::get_story_handler(peer_id, epic_id, story_id, &mut clients, &mut db_handle).await?;
             }
             // Adds a story to the the current epic, writes changes to the epic's file
@@ -324,6 +330,7 @@ async fn broker(
                 story_name,
                 story_description,
             } => {
+                event!(Level::INFO, peer_id, epic_id, story_name, story_description, "received 'AddStory' event from client {}", peer_id);
                 handlers::add_story_handler(peer_id, epic_id, story_name, story_description, &mut clients, &mut db_handle).await?;
             }
             // Deletes a story from the current epic, writes changes to the epic's file
@@ -332,6 +339,7 @@ async fn broker(
                 epic_id,
                 story_id,
             } => {
+                event!(Level::INFO, peer_id, epic_id, story_id, "received 'DeleteStory' event from client {}", peer_id);
                 handlers::delete_story_handler(peer_id, epic_id, story_id, &mut clients, &mut db_handle).await?;
             }
             // Updates the status of a story, writes changes to the epic's file
@@ -341,19 +349,28 @@ async fn broker(
                 story_id,
                 status,
             } => {
+                event!(Level::INFO, peer_id, epic_id, story_id, status, "received 'UpdateStoryStatus from client {}", peer_id);
                 handlers::update_story_status(peer_id, epic_id, story_id, status, &mut clients, &mut db_handle).await?;
             }
             // The event was unable to be parsed, send a response informing the client
             Event::UnparseableEvent { peer_id } => {
+                event!(Level::WARN, peer_id, "received 'UnparseableEvent' from client {}", peer_id);
                 handlers::unparseable_event_handler(peer_id, &mut clients).await?;
             }
         }
     }
+
     // Drop clients so that writers will finish
+    event!(Level::INFO, clients = ?clients, "completed brokers select loop, dropping remaining client channels");
     drop(clients);
+
     // Drop disconnect_sender, and drain the rest of the disconnected peers
+    event!(Level::INFO, "dropping client disconnection channel");
     drop(disconnect_sender);
+
+    event!(Level::INFO, "draining remaining client write tasks");
     while let Some((_peer_id, _client_receiver)) = disconnect_receiver.next().await {}
+
     Ok(())
 }
 
