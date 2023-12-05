@@ -182,13 +182,13 @@ async fn connection_loop(
 /// # Returns
 ///
 /// A `Result<(), DbError>`, the `Ok` variant if successful, otherwise the `Err` variant.
+#[instrument(ret, err)]
 async fn connection_write_loop(
     stream: Arc<TcpStream>,
     client_receiver: &mut Receiver<Response>,
     client_shutdown: UnboundedReceiver<Void>,
     peer_id: Uuid,
 ) -> Result<(), DbError> {
-    println!("inside connection write loop");
     let mut stream = &*stream;
     let mut client_receiver = client_receiver.fuse();
     let mut client_shutdown = client_shutdown.fuse();
@@ -196,6 +196,7 @@ async fn connection_write_loop(
         select! {
             response = client_receiver.next().fuse() => match response {
                 Some(resp) => {
+                    event!(Level::INFO, response = ?response, peer_id, "client {} received response from broker", peer_id);
                     stream.write_all(resp.as_bytes().as_slice())
                             .await
                             .map_err(|_| DbError::ConnectionError(format!("unable to send response to client {}", peer_id)))?;
@@ -203,11 +204,16 @@ async fn connection_write_loop(
                 None => break
             },
             void = client_shutdown.next().fuse() => match void {
+
                 Some(void) => {}
-                None => break,
+                None => {
+                    event!(Level::INFO, peer_id, "client {} write task received shutdown signal", peer_id);
+                    break;
+                },
             }
         }
     }
+    event!(Level::INFO, peer_id, "client {} write task shutting down", peer_id);
     Ok(())
 }
 
@@ -217,6 +223,7 @@ async fn connection_write_loop(
 /// # Returns
 ///
 /// A `Result<(), DbError>`, the `Ok` variant if successful, otherwise the `Err` variant.
+#[instrument(ret, err)]
 async fn broker(
     mut receiver: Receiver<Event>,
     db_dir: String,
@@ -240,15 +247,27 @@ async fn broker(
         // Attempt to read an event or disconnect a peer
         let event = select! {
             event = events.next().fuse() => match event {
-                Some(event) => event,
-                None => break,
+                Some(event) => {
+                    event!(Level::INFO, event = ?event, "broker task received event");
+                    event
+                },
+                None => {
+                    event!(Level::INFO, "broker task received shutdown signal from events channel");
+                    break;
+                },
             },
             disconnect = disconnect_receiver.next().fuse() => match disconnect {
                 Some((peer_id, _client_receiver)) => {
-                    assert!(clients.remove(&peer_id).is_some());
+                    let removed_client_sender = clients
+                        .remove(&peer_id)
+                        .ok_or(DbError::DoesNotExist(format!("client with id {} should exist in clients map", peer_id)))?;
+                    event!(Level::INFO, peer_id, "removed client {} successfully from client map", peer_id);
                     continue;
                 }
-                None => break,
+                None => {
+                    event!(Level::WARN, "broker task received shutdown signal from client disconnection channel");
+                    break;
+                },
             },
         };
 
