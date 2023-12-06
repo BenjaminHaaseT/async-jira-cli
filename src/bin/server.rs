@@ -555,35 +555,15 @@ mod handlers {
             match epic.get_story(story_id) {
                 Some(story) => {
                     event!(Level::INFO, story_id, story = ?story, "found story with id {}", story_id);
-                    if let Err(e) = client_sender.send(Response::GetStoryOk(story_id, story.as_bytes())).await {
-                        event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
-                        return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
-                    } else {
-                        event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
-                    }
+                    log_connection_error(client_sender.send(Response::GetStoryOk(story_id, story.as_bytes())).await, peer_id)?;
                 }
                 None => {
                     event!(Level::INFO, story_id, "story with id {}, does not exist", story_id);
-                    // if let Err(e) = client_sender.send()
-                    // let _ = log_connection_error(
-                    //     client_sender
-                    //         .send(Response::StoryDoesNotExist(
-                    //             epic_id,
-                    //             story_id,
-                    //             epic.as_bytes(),
-                    //         ))
-                    //         .await,
-                    //     peer_id,
-                    // );
+                    log_connection_error(client_sender.send(Response::StoryDoesNotExist(epic_id, story_id, epic.as_bytes())).await, peer_id)?;
                 }
             }
         } else {
-            let _ = log_connection_error(
-                client_sender
-                    .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
-                    .await,
-                peer_id,
-            );
+            log_connection_error(client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await, peer_id)?;
         }
         Ok(())
     }
