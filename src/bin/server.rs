@@ -509,7 +509,7 @@ mod handlers {
                 }
             }
             None => {
-                if let Err(e) = client_sender.response(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())) {
+                if let Err(e) = client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await {
                     event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
                     return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
                 } else {
@@ -524,22 +524,26 @@ mod handlers {
     pub async fn update_epic_status_handler(peer_id: Uuid, epic_id: u32, status: Status, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
         let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
         if let Some(epic) = db_handle.get_epic_mut(epic_id) {
+            event!(Level::INFO, epic_id, status = ?status, epic = ?epic,  "found epic with id {}, updating status to {}", epic_id, status);
             epic.update_status(status);
             // Send response that status was updated successfully
-            let _ = log_connection_error(
-                client_sender
-                    .send(Response::EpicStatusUpdateOk(epic_id, epic.as_bytes()))
-                    .await,
-                peer_id,
-            );
+            if let Err(e) = client_sender.send(Response::EpicStatusUpdateOk(epic_id, epic.as_bytes())).await {
+                event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+                return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
+            } else {
+                event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
+            }
+
+            event!(Level::INFO, epic = ?epic, "writing updated epic to database file");
             epic.write_async().await?;
         } else {
-            let _ = log_connection_error(
-                client_sender
-                    .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
-                    .await,
-                peer_id,
-            );
+            event!(Level::INFO, epic_id, status = ?status, "epic with id {} not found, unable to update status to {}", epic_id, status);
+            if let Err(e) = client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await {
+                event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+                return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
+            } else {
+                event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
+            }
         }
         Ok(())
     }
