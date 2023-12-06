@@ -41,15 +41,13 @@ async fn spawn_and_log_errors(
 /// # Returns
 ///
 /// A boolean, true if an error occurred and was logged, false otherwise.
-fn log_connection_error(result: Result<(), SendError>, peer_id: Uuid) -> bool {
-    match result.map_err(|_| {
-        DbError::ConnectionError(format!("unable to send response to client: {}", peer_id))
-    }) {
-        Err(e) => {
-            eprintln!("error: {}", e);
-            true
-        }
-        Ok(()) => false,
+#[instrument(ret, err)]
+fn log_connection_error(result: Result<(), SendError>, peer_id: Uuid) -> Result<(), DbError>{
+    if let Err(e) = result {
+        return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}: {}", peer_id, e)));
+    } else {
+        event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
+        Ok(())
     }
 }
 
@@ -422,12 +420,13 @@ mod handlers {
             });
 
             // Log error if one occurs
-            if let Err(e) = client_sender.send(Response::ClientAddedOk(db_handle.as_bytes())).await {
-                event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
-                return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
-            } else {
-                event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
-            }
+            log_connection_error(client_sender.send(Response::ClientAddedOk(db_handle.as_bytes())).await, peer_id)?;
+            // if let Err(e) = client_sender.send(Response::ClientAddedOk(db_handle.as_bytes())).await {
+            //     event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+            //     return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
+            // } else {
+            //     event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
+            // }
         } else {
             // This branch should not happen, therefore we need to return an 'Err'
             let error = DbError::IdConflict(format!("client with id {} already exists", peer_id));
@@ -548,29 +547,34 @@ mod handlers {
         Ok(())
     }
 
+    #[instrument(ret, err)]
     pub async fn get_story_handler(peer_id: Uuid, epic_id: u32, story_id: u32, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
         let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
         if let Some(epic) = db_handle.get_epic(epic_id) {
+            event!(Level::INFO, epic_id, epic = ?epic, "found epic with id {}", epic_id);
             match epic.get_story(story_id) {
                 Some(story) => {
-                    let _ = log_connection_error(
-                        client_sender
-                            .send(Response::GetStoryOk(story_id, story.as_bytes()))
-                            .await,
-                        peer_id,
-                    );
+                    event!(Level::INFO, story_id, story = ?story, "found story with id {}", story_id);
+                    if let Err(e) = client_sender.send(Response::GetStoryOk(story_id, story.as_bytes())).await {
+                        event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+                        return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
+                    } else {
+                        event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
+                    }
                 }
                 None => {
-                    let _ = log_connection_error(
-                        client_sender
-                            .send(Response::StoryDoesNotExist(
-                                epic_id,
-                                story_id,
-                                epic.as_bytes(),
-                            ))
-                            .await,
-                        peer_id,
-                    );
+                    event!(Level::INFO, story_id, "story with id {}, does not exist", story_id);
+                    // if let Err(e) = client_sender.send()
+                    // let _ = log_connection_error(
+                    //     client_sender
+                    //         .send(Response::StoryDoesNotExist(
+                    //             epic_id,
+                    //             story_id,
+                    //             epic.as_bytes(),
+                    //         ))
+                    //         .await,
+                    //     peer_id,
+                    // );
                 }
             }
         } else {
