@@ -424,6 +424,7 @@ mod handlers {
             // Log error if one occurs
             if let Err(e) = client_sender.send(Response::ClientAddedOk(db_handle.as_bytes())).await {
                 event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+                return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
             } else {
                 event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
             }
@@ -435,6 +436,7 @@ mod handlers {
             let mut client_sender = clients.get_mut(&peer_id).unwrap();
             if let Err(e) = client_sender.send(Response::ClientAlreadyExists).await {
                 event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+                return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
             } else {
                 event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
             }
@@ -452,6 +454,7 @@ mod handlers {
         // Send response to client, and log errors
         if let Err(e) = client_sender.send(Response::AddedEpicOk(epic_id, db_handle.as_bytes())).await {
             event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+            return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
         } else {
             event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
         }
@@ -470,6 +473,7 @@ mod handlers {
                 event!(Level::INFO, epic = ?epic, peer_id = ?peer_id, "successfully removed epic {} from database state", epic_id);
                 if let Err(e) = client_sender.send(Response::DeletedEpicOk(epic_id, db_handle.as_bytes())).await {
                     event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+                    return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
                 } else {
                     event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
                 }
@@ -482,6 +486,7 @@ mod handlers {
                 event!(Level::INFO, epic_id, peer_id = ?peer_id, "client {} requested epic with id {} which does not exist", peer_id, epic_id);
                 if let Err(e) = client_sender.send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())).await {
                     event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+                    return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
                 } else {
                     event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
                 }
@@ -490,28 +495,32 @@ mod handlers {
         Ok(())
     }
 
+    #[instrument(ret, err)]
     pub async fn get_epic_handler(peer_id: Uuid, epic_id: u32, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
         let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
         match db_handle.get_epic(epic_id) {
             Some(epic) => {
                 let epic_bytes = epic.as_bytes();
-                let _ = log_connection_error(
-                    client_sender.send(Response::GetEpicOk(epic_id,epic_bytes)).await,
-                    peer_id,
-                );
+                if let Err(e) = client_sender.send(Response::GetEpicOk(epic_id, epic_bytes)).await {
+                    event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+                    return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
+                } else {
+                    event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
+                }
             }
             None => {
-                let _ = log_connection_error(
-                    client_sender
-                        .send(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes()))
-                        .await,
-                    peer_id,
-                );
+                if let Err(e) = client_sender.response(Response::EpicDoesNotExist(epic_id, db_handle.as_bytes())) {
+                    event!(Level::ERROR, error = ?e, peer_id = ?peer_id, "error occurred when sending response to client {}", peer_id);
+                    return Err(DbError::ConnectionError(format!("error occurred when sending response to client {}", peer_id)));
+                } else {
+                    event!(Level::INFO, peer_id = ?peer_id, "successfully sent response to client {}", peer_id);
+                }
             }
         }
         Ok(())
     }
 
+    #[instrument(ret, err)]
     pub async fn update_epic_status_handler(peer_id: Uuid, epic_id: u32, status: Status, clients: &mut HashMap<Uuid, Sender<Response>>, db_handle: &mut DbState) -> Result<(), DbError> {
         let mut client_sender = clients.get_mut(&peer_id).expect("client should exist");
         if let Some(epic) = db_handle.get_epic_mut(epic_id) {
