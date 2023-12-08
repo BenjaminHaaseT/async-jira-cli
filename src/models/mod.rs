@@ -14,7 +14,7 @@ use std::cmp::PartialEq;
 use std::convert::{AsRef, Into, TryFrom};
 use std::error::Error;
 use std::fmt::Formatter;
-use std::io::{BufRead as StdBufRead, BufReader as StdBufReader, BufWriter as StdBufWriter, ErrorKind as StdErrorKind, Read as StdRead, Seek as StdSeek, Write as StdWrite};
+use std::io::{BufRead as StdBufRead, BufWriter as StdBufWriter, Read as StdRead, Seek as StdSeek, Write as StdWrite};
 use tracing::{instrument, event, Level};
 
 use crate::utils::{AsBytes, BytesEncode, TagDecoding, TagEncoding};
@@ -22,8 +22,6 @@ use crate::utils::{AsBytes, BytesEncode, TagDecoding, TagEncoding};
 pub mod prelude {
     pub use super::*;
 }
-
-// TODO: Set up logging of errors
 
 /// A top level abstraction for the database, all reads and writes to/from the database
 /// are performed via the `DbState` struct.

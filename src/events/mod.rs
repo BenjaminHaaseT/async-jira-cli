@@ -1,4 +1,5 @@
 //! Module that contains the `Event` struct.
+
 use crate::models::{DbError, Status};
 use crate::utils::{parse_4_bytes, Void};
 use async_std::{net::TcpStream, prelude::*, io::{Read, ReadExt}};
