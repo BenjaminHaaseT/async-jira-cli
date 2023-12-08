@@ -19,7 +19,6 @@ use clap::Parser;
 use futures::stream::FusedStream;
 use tracing::{instrument, Level, event};
 
-
 use async_jira_cli::events::prelude::*;
 use async_jira_cli::models::prelude::*;
 use async_jira_cli::response::prelude::*;
@@ -37,10 +36,6 @@ async fn spawn_and_log_errors(
 }
 
 /// Helper function that takes a `Result` and logs the error if it occurs.
-///
-/// # Returns
-///
-/// A boolean, true if an error occurred and was logged, false otherwise.
 #[instrument(ret, err)]
 fn log_connection_error(result: Result<(), SendError>, peer_id: Uuid) -> Result<(), DbError>{
     if let Err(e) = result {
