@@ -10,11 +10,14 @@ use async_std::{
     prelude::*,
     task::block_on,
 };
-
-mod interface;
+use tracing::{instrument, event, Level};
 
 use crate::interface::prelude::*;
 use async_jira_cli::utils::prelude::*;
+
+mod interface;
+
+
 
 /// The error type for any user facing error encountered by the client.
 #[derive(Debug)]
@@ -59,8 +62,10 @@ struct Cli {
 }
 
 /// Takes `server_addrs` and starts a new client connection.
+#[instrument(ret, err)]
 async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), UserError> {
     println!("connecting to server {:?}...", server_addrs);
+    event!(Level::INFO, server_address = ?server_addrs, "attempting to open a connection to server at {:?}", server_addrs);
     let connection = TcpStream::connect(server_addrs.clone())
         .await
         .map_err(
@@ -68,6 +73,7 @@ async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), Use
     )?;
     let client_input = BufReader::new(stdin());
     let mut interface = Interface::new(connection, client_input);
+    event!(Level::INFO, server_address = ?server_addrs, "successfully opened a connection to server at {:?}", server_addrs);
     interface.run().await
 }
 
