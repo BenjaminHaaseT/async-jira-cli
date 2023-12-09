@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::io::Read;
 use async_jira_cli::models::prelude::*;
 use async_jira_cli::utils::{BytesEncode, TagEncoding};
+use tracing::{instrument, event, Level};
 use crate::UserError;
 
 pub mod prelude {
@@ -28,6 +29,7 @@ pub struct EpicFrame {
 }
 
 impl TryFromReader<&EpicEncodeTag> for EpicFrame {
+    #[instrument(ret, err)]
     fn try_from_reader<R>(tag_buf: &EpicEncodeTag, reader: &mut R) -> Result<Self, UserError>
     where
         R: Read + Debug,
@@ -36,20 +38,25 @@ impl TryFromReader<&EpicEncodeTag> for EpicFrame {
         let (epic_id, name_len, description_len, status) = Epic::decode(tag_buf);
         let mut name_bytes = vec![0u8; name_len as usize];
         let mut description_bytes = vec![0; description_len as usize];
+
+        event!(Level::DEBUG, "attempting to read status for EpicFrame");
         let status = Status::try_from(status)
             .map_err(|_| UserError::ParseFrameError(format!("unable to parse status byte for epic {}", epic_id)))?;
 
+        event!(Level::DEBUG, "attempting to read name bytes from reader");
         // Attempt to read bytes from the reader
         reader.read_exact(name_bytes.as_mut_slice())
             .map_err(|_| UserError::ReadFrameError(format!("unable to read frame from reader {:?}", reader)))?;
+        event!(Level::DEBUG, "attempting to read description bytes from reader");
         reader.read_exact(description_bytes.as_mut_slice())
             .map_err(|_| UserError::ReadFrameError(format!("unable to read frame from reader {:?}", reader)))?;
 
+        event!(Level::INFO, "successfully read data for new EpicFrame");
         let name = String::from_utf8(name_bytes)
             .map_err(|_| UserError::ParseFrameError("unable to parse Epic Frame's name as valid utf8".to_string()))?;
         let description = String::from_utf8(description_bytes)
             .map_err(|_| UserError::ParseFrameError("unable to parse Epic Frame's description as valid utf8".to_string()))?;
-
+        event!(Level::INFO, "successfully parsed EpicFrame's data");
         Ok(EpicFrame { id: epic_id, name, description, status })
     }
 }
@@ -65,6 +72,7 @@ pub struct StoryFrame {
 }
 
 impl TryFromReader<&StoryEncodeTag> for StoryFrame {
+    #[instrument(ret, err)]
     fn try_from_reader<R>(tag_buf: &[u8; 17], reader: &mut R) -> Result<Self, UserError>
         where
             R: Read + Debug,
@@ -73,20 +81,24 @@ impl TryFromReader<&StoryEncodeTag> for StoryFrame {
         let (story_id, epic_id, name_len, description_len, status) = Story::decode(tag_buf);
         let mut name_bytes = vec![0; name_len as usize];
         let mut description_bytes = vec![0; description_len as usize];
+        event!(Level::DEBUG, "attempting to parse StoryFrame status");
         let status = Status::try_from(status)
             .map_err(|_| UserError::ParseFrameError(format!("unable to parse status for story {}", story_id)))?;
 
         // Attempt to read bytes from the reader
+        event!(Level::DEBUG, "attempting to read name bytes for new StoryFrame");
         reader.read_exact(name_bytes.as_mut_slice())
             .map_err(|_| UserError::ReadFrameError(format!("unable to read story name from reader {:?}", reader)))?;
+        event!(Level::DEBUG, "attempting to read description bytes for new StoryFrame");
         reader.read_exact(description_bytes.as_mut_slice())
             .map_err(|_| UserError::ReadFrameError(format!("unable to read story description from reader {:?}", reader)))?;
 
+        event!(Level::INFO, "successfully read data for new StoryFrame");
         let name = String::from_utf8(name_bytes)
             .map_err(|_| UserError::ParseFrameError("unable to parse Story Frame's name as valid utf8".to_string()))?;
         let description = String::from_utf8(description_bytes)
             .map_err(|_| UserError::ParseFrameError("unable to parse Story Frame's description as valid utf8".to_string()))?;
-
+        event!(Level::INFO, "successfully parsed data for new StoryFrame");
         Ok(StoryFrame { id: story_id, epic_id, name, description, status })
     }
 }

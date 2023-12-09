@@ -294,7 +294,7 @@ impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
     /// Takes `request_option` which represents the user request and `input_reader` which is the
     /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
     /// the request was created successfully, otherwise
-    #[instrument(ret, err)]
+    #[instrument(ret, err, skip(input_reader))]
     async fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
             event!(Level::INFO, request_option, "user has selected to go to previous page");
@@ -483,7 +483,7 @@ impl<R: BufRead + Send + Unpin> Page<R> for StoryDetailPage {
     /// Takes `request_option` which represents the user request and `input_reader` which is the
     /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
     /// the request was created successfully, otherwise returns `Err`
-    #[instrument(ret, err)]
+    #[instrument(ret, err, skip(input_reader))]
     async fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
             event!(Level::INFO, request_option, "user has selected to navigate to previous page");
