@@ -17,8 +17,6 @@ use async_jira_cli::utils::prelude::*;
 
 mod interface;
 
-
-
 /// The error type for any user facing error encountered by the client.
 #[derive(Debug)]
 pub enum UserError {

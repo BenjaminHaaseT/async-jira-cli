@@ -5,13 +5,13 @@ use crate::UserError;
 use async_jira_cli::models::prelude::*;
 use async_jira_cli::utils::prelude::*;
 use async_jira_cli::events::prelude::*;
-// use std::io::{Read, BufRead, Cursor, Seek, ErrorKind};
 use std::marker::Unpin;
 use std::io::{Cursor, Read as StdRead, BufRead as StdBufRead};
 use async_std::io::{Read, ReadExt, BufRead, prelude::BufReadExt, Seek, ErrorKind};
 use std::ops::DerefMut;
 use async_trait;
 use unicode_width;
+use tracing::{instrument, event, Level};
 
 pub mod prelude {
     pub use super::*;
@@ -24,6 +24,7 @@ pub mod prelude {
 pub trait Page<R: BufRead + Send + Unpin> {
     /// Required method, prints the page's contents to the console in a way that is formatted 
     fn print_page(&self);
+
     /// Required method, takes `request_option` and `input_reader` and attempts to create 
     /// an `Action`. Returns `Result`, the `Ok` variant if the request was parsed successfully, otherwise
     /// the `Err` variant.
@@ -66,6 +67,7 @@ pub struct HomePage {
 impl HomePage {
     /// Associated method, attempts to create a new `HomePage` struct from `data`.
     /// Returns a `Result`, the `Ok` variant if creating was successful, otherwise `Err`.
+    #[instrument(ret, err)]
     pub fn try_create(mut data: Vec<u8>) -> Result<Self, UserError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
@@ -95,6 +97,7 @@ impl HomePage {
             // used to ensure that we have read properly formatted data from the server
             cur_pos = cursor.position();
         }
+        event!(Level::DEBUG, epic_frames = ?epic_frames, "read home page data successfully");
         epic_frames.sort_by_key(|frame| frame.id);
         Ok(HomePage { epic_frames })
     }
@@ -127,11 +130,14 @@ impl<R: BufRead + Send + Unpin> Page<R> for HomePage {
     /// The method will determine what action needs to be returned, given `request_option`.
     /// Ensures that any valid request is properly formatted for sending to the server if a successful
     /// `Action::RequestParsed` is returned.
+    #[instrument(ret, err, skip(input_reader))]
     async fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
-        println!("Inside Homepage parse_request_option");
+        // println!("Inside Homepage parse_request_option");
         if request_option.to_lowercase() == "q" {
+            event!(Level::INFO, request_option, "user has selected to quit");
             return Ok(Action::Quit);
         } else if request_option.to_lowercase() == "c" {
+            event!(Level::INFO, request_option, "user has selected to create a new epic");
             // User has selected to add a new epic to the database
             let mut epic_name = String::new();
 
@@ -166,12 +172,14 @@ impl<R: BufRead + Send + Unpin> Page<R> for HomePage {
                 return Err(UserError::InvalidInput(String::from("Invalid input, epic's description is to large")));
             }
 
+            event!(Level::DEBUG, epic_name = ?epic_name, epic_description = ?epic_description, "successfully parsed user input for new epic");
             // Get the bytes for the request from the tag, name and description
             let mut request_bytes = Event::add_epic_tag(&epic_name, &epic_description).to_vec();
             request_bytes.extend_from_slice(epic_name.as_bytes());
             request_bytes.extend_from_slice(epic_description.as_bytes());
             Ok(Action::RequestParsed(request_bytes))
         } else if let Ok(id) = request_option.parse::<u32>() {
+            event!(Level::INFO, request_option, epic_id = id, "user has selected to get an epic by id");
             // User has selected to request details for an epic
             let request_bytes = Event::get_epic_tag(id).to_vec();
             Ok(Action::RequestParsed(request_bytes))
@@ -192,6 +200,7 @@ impl EpicDetailPage {
 
     /// Attempts to create a new `EpicDetailPage` from `data`. Returns a `Result`, the `Ok` variant
     /// if creating was successful, otherwise `Err`.
+    #[instrument(ret, err)]
     pub fn try_create(data: Vec<u8>) -> Result<Self, UserError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
@@ -229,6 +238,7 @@ impl EpicDetailPage {
 
             cur_pos = cursor.position();
         }
+        event!(Level::DEBUG, epic_frame = ?frame, "successfully read data for epic info page");
         story_frames.sort_by_key(|frame| frame.id);
         Ok(EpicDetailPage { frame, story_frames })
     }
@@ -284,10 +294,13 @@ impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
     /// Takes `request_option` which represents the user request and `input_reader` which is the
     /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
     /// the request was created successfully, otherwise
+    #[instrument(ret, err)]
     async fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
+            event!(Level::INFO, request_option, "user has selected to go to previous page");
             Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
+            event!(Level::INFO, request_option, epic_id = ?self.frame.id, "user has selected to update the epic's status");
             // Update epic's status in this case
             let mut new_status_buf = String::new();
 
@@ -327,6 +340,7 @@ impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
             let request_bytes = Event::get_update_epic_status_tag(self.frame.id, new_status).to_vec();
             Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "d" {
+            event!(Level::INFO, request_option, epic_id = ?self.frame.id, "user has selected to delete the epic");
             // Delete the epic
             println!("are you sure you want to delete epic {}? (y|n)", self.frame.id);
             let mut user_final_choice = String::new();
@@ -357,6 +371,7 @@ impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
 
             Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "c" {
+            event!(Level::INFO, request_option, epic_id = ?self.frame.id, "user has selected to create a new story for the current epic");
             // Create a new story
             let mut story_name = String::new();
 
@@ -390,12 +405,15 @@ impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
                 return Err(UserError::InvalidInput(String::from("invalid input, story's description is too large")));
             }
 
+            event!(Level::DEBUG, story_name = ?story_name, story_description = ?story_description, "successfully read user input for the new story");
+
             let mut request_bytes = Event::add_story_tag(self.frame.id, &story_name, &story_description).to_vec();
             request_bytes.extend_from_slice(story_name.as_bytes());
             request_bytes.extend_from_slice(story_description.as_bytes());
 
             Ok(Action::RequestParsed(request_bytes))
         } else if let Ok(story_id) = request_option.parse::<u32>() {
+            event!(Level::INFO, request_option, story_id, "user has selected to get a story by id");
             // navigate to story detail page
             let request_bytes = Event::get_story_tag(self.frame.id, story_id).to_vec();
             Ok(Action::RequestParsed(request_bytes))
@@ -414,6 +432,7 @@ pub struct StoryDetailPage {
 
 impl StoryDetailPage {
     /// Attempts to create a new `StoryDetailPage` from `data`
+    #[instrument(ret, err)]
     pub fn try_create(data: Vec<u8>) -> Result<Self, UserError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
@@ -428,11 +447,9 @@ impl StoryDetailPage {
         if cursor.position() != data_len {
             return Err(UserError::ReadFrameError(String::from("error reading frame from response data, data may not have been formatted correctly")));
         }
-
+        event!(Level::DEBUG, story_frame = ?story_frame, "read data for story frame successfully");
         Ok(StoryDetailPage { story_frame })
     }
-
-
 
     /// A helper function for displaying the status selection menu
     fn print_status_update_menu(&self) {
@@ -466,10 +483,13 @@ impl<R: BufRead + Send + Unpin> Page<R> for StoryDetailPage {
     /// Takes `request_option` which represents the user request and `input_reader` which is the
     /// asynchronous reader that the clients input will be read from. Returns a `Result`, the `Ok` variant if
     /// the request was created successfully, otherwise returns `Err`
+    #[instrument(ret, err)]
     async fn parse_request(&self, request_option: &str, input_reader: &mut R) -> Result<Action, UserError> {
         if request_option.to_lowercase() == "p" {
+            event!(Level::INFO, request_option, "user has selected to navigate to previous page");
             Ok(Action::PreviousPage)
         } else if request_option.to_lowercase() == "u" {
+            event!(Level::INFO, request_option, "user has selected to update the status of the current story");
             let mut status_buf = String::new();
 
             // Validation loop for getting new status from the user
@@ -501,6 +521,7 @@ impl<R: BufRead + Send + Unpin> Page<R> for StoryDetailPage {
             let request_bytes = Event::get_update_story_status_tag(self.story_frame.epic_id, self.story_frame.id, new_status).to_vec();
             Ok(Action::RequestParsed(request_bytes))
         } else if request_option.to_lowercase() == "d" {
+            event!(Level::INFO, request_option, story_id = ?self.story_frame.id, "user has selected to delete the current story");
             let mut user_final_choice = String::new();
             println!("are you sure you want to delete story {}? (y|n)", self.story_frame.id);
             let request_bytes = loop {
