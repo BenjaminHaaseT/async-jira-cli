@@ -692,14 +692,14 @@ struct Cli {
 }
 
 fn main() {
-    // let subscriber = tracing_subscriber::fmt()
-    //     .with_file(true)
-    //     .with_level(true)
-    //     .with_line_number(true)
-    //     .with_target(true)
-    //     .with_thread_ids(true)
-    //     .with_max_level(tracing::Level::DEBUG)
-    //     .init();
+    let subscriber = tracing_subscriber::fmt()
+        .with_file(true)
+        .with_level(true)
+        .with_line_number(true)
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
     // let cli = Cli::parse();
     // println!("Starting server...");
