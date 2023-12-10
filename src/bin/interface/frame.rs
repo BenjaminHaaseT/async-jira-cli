@@ -13,6 +13,7 @@ pub mod prelude {
 
 /// An interface that allows implementors to be created from a reader and a tag.
 pub trait TryFromReader<B: TagEncoding> {
+    /// Attempts to create a `Self` instance from the given `reader`.
     fn try_from_reader<R>(tag_buf: B, reader: &mut R) -> Result<Self, UserError>
         where
             Self: Sized,
@@ -22,9 +23,16 @@ pub trait TryFromReader<B: TagEncoding> {
 /// Represents the important client facing information of a single `Epic`
 #[derive(Debug)]
 pub struct EpicFrame {
+    /// The id of the `Epic` this frame represents
     pub id: u32,
+
+    /// The name of the `Epic` this frame represents
     pub name: String,
+
+    /// The description of the `Epic` this frame represents
     pub description: String,
+
+    /// The status of the `Epic` this frame represents
     pub status: Status,
 }
 
@@ -64,10 +72,19 @@ impl TryFromReader<&EpicEncodeTag> for EpicFrame {
 /// Represents the important client facing information for a single `Story`
 #[derive(Debug)]
 pub struct StoryFrame {
+    /// The id of the `Story` this frame represents
     pub id: u32,
+
+    /// The id of the `Epic` that contains the `Story`
     pub epic_id: u32,
+
+    /// The name of the `Story` this frame represents
     pub name: String,
+
+    /// The description of the `Story this frame represents
     pub description: String,
+
+    /// The status of the `Story` this frame represents
     pub status: Status,
 }
 
