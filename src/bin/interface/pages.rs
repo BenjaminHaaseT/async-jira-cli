@@ -34,25 +34,36 @@ pub trait Page<R: BufRead + Send + Unpin> {
 /// Represents the possible states that prompt the `Interface` to update.
 #[derive(Debug, PartialEq)]
 pub enum Action {
+    /// Represents a users decision to quit
     Quit,
+
+    /// Represents a users decision to navigate to a previous page
     PreviousPage,
+
+    /// Represents a users decision to refresh the current page, i.e load it again in the UI
     Refresh,
+
+    /// Represents the action that a request has been successfully parsed
     RequestParsed(Vec<u8>)
 }
 
 impl Action {
+    /// Returns true if self is the 'Quit' variant, false otherwise.
     pub fn is_quit(&self) -> bool {
         *self == Action::Quit
     }
 
+    /// Returns true if self is the 'PreviousPage' variant false otherwise.
     pub fn is_previous_page(&self) -> bool {
         *self == Action::PreviousPage
     }
 
+    /// Returns true if self is the 'Refresh' variant false otherwise.
     pub fn is_refresh(&self) -> bool {
         *self == Action::Refresh
     }
 
+    /// Returns true if self is the 'RequestParsed' variant false otherwise.
     pub fn is_request_parsed(&self) -> bool {
         !(self.is_quit() || self.is_previous_page() || self.is_refresh())
     }
@@ -61,6 +72,7 @@ impl Action {
 /// Represents the first page that the user will see.
 #[derive(Debug)]
 pub struct HomePage {
+    /// The `EpicFrames` to be displayed to the user
     pub epic_frames: Vec<EpicFrame>
 }
 
@@ -112,6 +124,7 @@ impl HomePage {
 
 #[async_trait::async_trait]
 impl<R: BufRead + Send + Unpin> Page<R> for HomePage {
+    /// Displays the contents of a `HomePage` in a nicely formatted human readable way.
     fn print_page(&self) {
         println!("{:-^65}", "EPICS");
         print!("{:^13}|", "id");
@@ -192,7 +205,10 @@ impl<R: BufRead + Send + Unpin> Page<R> for HomePage {
 /// A page for displaying the details of a specific Epic.
 #[derive(Debug)]
 pub struct EpicDetailPage {
+    /// A frame for the epic that the `EpicDetailPage` is representing to the user
     pub frame: EpicFrame,
+
+    /// The stories that belong to the `EpicFrame`
     pub story_frames: Vec<StoryFrame>,
 }
 
@@ -262,6 +278,7 @@ impl EpicDetailPage {
 
 #[async_trait::async_trait]
 impl<R: BufRead + Send + Unpin> Page<R> for EpicDetailPage {
+    /// Displays the contents of the `EpicDetailPage` in a nicely formatted, human readable way.
     fn print_page(&self) {
         println!("{:-^65}", "EPIC");
         print!("{:^6}| ", "id");
@@ -463,6 +480,7 @@ impl StoryDetailPage {
 
 #[async_trait::async_trait]
 impl<R: BufRead + Send + Unpin> Page<R> for StoryDetailPage {
+    /// Displays the contents of the `StoryDetailPage` to stdout in a nicely formatted human readable way.
     fn print_page(&self) {
         println!("{:-^65}", "Story");
         print!("{:^6}|", "id");
