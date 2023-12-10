@@ -18,6 +18,7 @@ use uuid::Uuid;
 use clap::Parser;
 use futures::stream::FusedStream;
 use tracing::{instrument, Level, event};
+use tracing_subscriber;
 
 use async_jira_cli::events::prelude::*;
 use async_jira_cli::models::prelude::*;
@@ -691,8 +692,17 @@ struct Cli {
 }
 
 fn main() {
+    // let subscriber = tracing_subscriber::fmt()
+    //     .with_file(true)
+    //     .with_level(true)
+    //     .with_line_number(true)
+    //     .with_target(true)
+    //     .with_thread_ids(true)
+    //     .with_max_level(tracing::Level::DEBUG)
+    //     .init();
+
     // let cli = Cli::parse();
-    println!("Starting server...");
+    // println!("Starting server...");
     // if let Err(e) = task::block_on(accept_loop(
     //     (cli.address.as_str(), cli.port),
     //     cli.channel_size,
