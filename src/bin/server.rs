@@ -701,25 +701,27 @@ fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    // let cli = Cli::parse();
-    // println!("Starting server...");
-    // if let Err(e) = task::block_on(accept_loop(
-    //     (cli.address.as_str(), cli.port),
-    //     cli.channel_size,
-    //     cli.database_directory,
-    //     cli.database_filename,
-    //     cli.epic_directory
-    // )) {
-    //     eprintln!("{e}");
-    // }
+    // let filter = tracing_subscriber::EnvFilter::from_default_env();
 
+    let cli = Cli::parse();
+    println!("Starting server...");
     if let Err(e) = task::block_on(accept_loop(
-        ("0.0.0.0", 8080),
-        100,
-        "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database".to_string(),
-        "test.txt".to_string(),
-        "test_epics".to_string(),
+        (cli.address.as_str(), cli.port),
+        cli.channel_size,
+        cli.database_directory,
+        cli.database_filename,
+        cli.epic_directory
     )) {
         eprintln!("{e}");
     }
+
+    // if let Err(e) = task::block_on(accept_loop(
+    //     ("0.0.0.0", 8080),
+    //     100,
+    //     "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database".to_string(),
+    //     "test.txt".to_string(),
+    //     "test_epics".to_string(),
+    // )) {
+    //     eprintln!("{e}");
+    // }
 }
