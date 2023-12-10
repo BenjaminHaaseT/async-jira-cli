@@ -212,6 +212,7 @@ where
         Ok(())
     }
 
+    /// Helper method for parsing a successful 'AddEpic` response received from the server.
     #[instrument(ret, err, skip(self))]
     async fn parse_add_epic_response(&mut self, epic_id: u32, data_len: u64) -> Result<(), UserError> {
         // Read updated homepage data

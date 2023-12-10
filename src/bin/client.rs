@@ -20,14 +20,31 @@ mod interface;
 /// The error type for any user facing error encountered by the client.
 #[derive(Debug)]
 pub enum UserError {
+    /// An error the connection to the server.
     ServerConnection(String),
+
+    /// An error from parsing the response received by the server.
     ParseResponseError(String),
+
+    /// An error from reading a frame.
     ReadFrameError(String),
+
+    /// An error from trying to parse a frame.
     ParseFrameError(String),
+
+    /// Internal server error.
     InternalServerError,
+
+    /// An error in parsing the request from the client.
     ParseRequestOption,
+
+    /// An invalid request by the client.
     InvalidRequest,
+
+    /// Invalid input from the client.
     InvalidInput(String),
+
+    /// An error parsing input received from the client.
     ParseInputError,
 }
 
@@ -81,4 +98,5 @@ fn main() {
     if let Err(e) = block_on(run(addrs)) {
         eprintln!("{e}");
     }
+    println!("goodbye");
 }
