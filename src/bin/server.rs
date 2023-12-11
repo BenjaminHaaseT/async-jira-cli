@@ -718,14 +718,4 @@ fn main() {
     )) {
         eprintln!("{e}");
     }
-
-    // if let Err(e) = task::block_on(accept_loop(
-    //     ("0.0.0.0", 8080),
-    //     100,
-    //     "/Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database".to_string(),
-    //     "test.txt".to_string(),
-    //     "test_epics".to_string(),
-    // )) {
-    //     eprintln!("{e}");
-    // }
 }
