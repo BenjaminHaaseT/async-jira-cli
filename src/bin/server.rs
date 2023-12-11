@@ -19,6 +19,7 @@ use clap::Parser;
 use futures::stream::FusedStream;
 use tracing::{instrument, Level, event};
 use tracing_subscriber;
+use tracing_subscriber::prelude::*;
 
 use async_jira_cli::events::prelude::*;
 use async_jira_cli::models::prelude::*;
@@ -692,16 +693,33 @@ struct Cli {
 }
 
 fn main() {
-    let subscriber = tracing_subscriber::fmt()
-        .with_file(true)
-        .with_level(true)
+    // let subscriber = tracing_subscriber::fmt()
+    //     .with_file(true)
+    //     .with_level(true)
+    //     .with_line_number(true)
+    //     .with_target(true)
+    //     .with_thread_ids(true)
+    //     .with_max_level(tracing::Level::DEBUG)
+    //     .init();
+    // let format = tracing_subscriber::fmt::format()
+    //     .with_file(true)
+    //     .with_target(true)
+    //     .with_level(true)
+    //     .with_thread_ids(true)
+    //     .with_line_number(true);
+    let format = tracing_subscriber::fmt::layer()
         .with_line_number(true)
+        .with_level(true)
+        .with_file(true)
         .with_target(true)
-        .with_thread_ids(true)
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+        .with_thread_ids(true);
 
-    // let filter = tracing_subscriber::EnvFilter::from_default_env();
+    let filter = tracing_subscriber::EnvFilter::from_default_env();
+    //
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(format)
+        .init();
 
     let cli = Cli::parse();
     println!("Starting server...");
