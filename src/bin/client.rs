@@ -11,6 +11,8 @@ use async_std::{
     task::block_on,
 };
 use tracing::{instrument, event, Level};
+use tracing_subscriber::prelude::*;
+use tracing_appender;
 
 use crate::interface::prelude::*;
 use async_jira_cli::utils::prelude::*;
@@ -93,6 +95,21 @@ async fn run(server_addrs: impl ToSocketAddrs + Debug + Clone) -> Result<(), Use
 }
 
 fn main() {
+    // Create appender for logging client events
+    let appender = tracing_appender::rolling::never("/Users/benjaminhaase/development/Personal/async_jira_cli", "client_logs.log");
+    let (writer, _guard) = tracing_appender::non_blocking(appender);
+    let filter = tracing_subscriber::EnvFilter::from_default_env();
+
+    tracing_subscriber::fmt()
+        .with_level(true)
+        .with_line_number(true)
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_env_filter(filter)
+        .with_writer(writer)
+        .init();
+
     let cli = Cli::parse();
     let addrs = (cli.address.as_str(), cli.port);
     if let Err(e) = block_on(run(addrs)) {
