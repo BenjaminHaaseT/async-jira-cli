@@ -33,6 +33,9 @@ Once one has a server running, a new client can connect to the server. For examp
 
 ![](client.png)
 
+We see a list of all the epics in the database with a prompt for the clients input. The output shown above is from a test database on my local machine.
+
+
 
 
 
