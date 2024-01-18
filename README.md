@@ -31,6 +31,8 @@ It is a little verbose to start the server. The command line arguments provide t
 ### Client
 Once one has a server running, a new client can connect to the server. For example say we wanted to run a client that connects to the server that was run previously. Opening a new terminal window and running the command `cargo run --bin client -- 127.0.0.1 8080` will allow us to connect a new client to the server. We just pass the address of the server and the port. After doing so the client terminal is greeted with
 
+![](client.png)
+
 
 
 
