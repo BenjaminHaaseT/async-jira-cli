@@ -18,7 +18,7 @@ After cloning the repository to your local machine, one needs to run the server 
 
 After executing the above command the server will display
 
-
+![](server.png)
 
 It is a little verbose to start the server. The command line arguments provide the following configuration options for the server.
 
