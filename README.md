@@ -8,3 +8,22 @@ the server was built over Tcp. Any client can execute the typical CRUD operation
 This was my first project that used asynchronous Rust code extensively. So the main goal of this project was to learn how to write asynchronous Rust code and how to build something that used message passing between tasks. In addition, I wanted to gain more practice with file io
 so the 'database', is really just raw bytes being written to and read from text files.
 
+## Usage
+To run this code one needs to clone this repository to their local machine then follow the instructions for running the client or server, respectively.
+
+### Server
+After cloning the repository to your local machine, one needs to run the server passing in the appropriate command line arguments. For example, the command to start the server on my local machine with a test database is: 
+
+`RUST_LOG=error cargo run --bin server -- -d /Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database -f test.txt -e test_epics -c 1000 -a 127.0.0.1 -p 8080`
+
+After executing the above command the server will display
+
+
+
+It is a little verbose to start the server. The command line arguments provide the following configuration options for the server.
+
+| -d | -f | -e | -c | -a | -p |
+| --- | --- | --- | --- | --- | --- |
+| The path to the directory where the in memory database is located | The name of the text file that represents the database | The directory that will contain all of the epics (it should be located in the database directory) | The size of the channel buffer for the main broker task, limits the number of clients that can connect at once | The address the server will listen for incoming requests | The port of the server |
+
+
