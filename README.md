@@ -12,7 +12,7 @@ so the 'database', is really just raw bytes being written to and read from text 
 To run this code one needs to clone this repository to their local machine then follow the instructions for running the client or server, respectively.
 
 ### Server
-After cloning the repository to your local machine, one needs to run the server passing in the appropriate command line arguments. For example, the command to start the server on my local machine with a test database is: 
+After cloning the repository to your local machine, one needs to pass in the appropriate command line arguments to run the server. For example, the command to start the server on my local machine with a test database is: 
 
 `RUST_LOG=error cargo run --bin server -- -d /Users/benjaminhaase/development/Personal/async_jira_cli/src/test_database -f test.txt -e test_epics -c 1000 -a 127.0.0.1 -p 8080`
 
