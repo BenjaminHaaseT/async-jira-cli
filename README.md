@@ -26,4 +26,8 @@ It is a little verbose to start the server. The command line arguments provide t
 | --- | --- | --- | --- | --- | --- |
 | The path to the directory where the in memory database is located | The name of the text file that represents the database | The directory that will contain all of the epics (it should be located in the database directory) | The size of the channel buffer for the main broker task, limits the number of clients that can connect at once | The address the server will listen for incoming requests | The port of the server |
 
+> Note: The server will not create a new database directory, text file or epic directory for you. The database must already exist. In order to create a new database, one only has to create a new directory containing another directory for epics and an empty text file. Then when starting the server the appropriate path(s) and file name should be passed as command line arguments.
+
+
+
 
