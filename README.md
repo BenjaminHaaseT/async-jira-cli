@@ -29,7 +29,7 @@ It is a little verbose to start the server. The command line arguments provide t
 > Note: The server will not create a new database directory, text file or epic directory for you. The database must already exist. In order to create a new database, one only has to create a new directory containing another directory for epics and an empty text file. Then when starting the server the appropriate path(s) and file name should be passed as command line arguments.
 
 ### Client
-Once one has a server running, a new client can connect to the server. For example say we wanted to run a client that connects to the server that was run previously. Opening a new terminal window and running the command `cargo run --bin client -- 127.0.0.1 8080` will allow us to connect a new client to the server. We just pass the address of the server and the port. After doing so the client terminal is greeted with
+Once one has a server running, a new client can connect to the server. For example say we wanted to run a client that connects to the server that was run previously. Opening a new terminal window and running the command `cargo run --bin client -- 127.0.0.1 8080` will allow us to connect a new client to the server. We just pass the address of the server and the port as command line arguments, and after doing so the client terminal is greeted with
 
 ![](client.png)
 
